@@ -870,7 +870,7 @@ def ash_wait_tree(conn,event,sql_id):
 def sql_text(conn,sql_id):
   try:
     SQL_TEXT ="""
-	select sql_fulltext from gv$sql where sql_id = '%s'
+	select sql_fulltext from gv$sql where sql_id = '%s' and rownum <=1
     """
 
     SQL=SQL_TEXT% (sql_id)
@@ -1559,23 +1559,52 @@ end;
 
     cur = conn.cursor()
     cur.execute(SQL)
-    #res = cur.fetchall()
 
-    #for a in range(len(res)):
-    #    a_list=[]
-    #    for b in range(len(res[a])):
-    #            str_chk = str(res[a][b])
+    curr_time() 
+  
+  except cx_Oracle.DatabaseError,info:
+    print "Error: ",info
+
+def dbwr_bottleneck(conn,rownum):
+  try:
+    SQL_BIND ="""
+	select * from(
+select INSTANCE_NUMBER,
+  snap_id,
+  event_name,
+  total_waits,
+  time_waited_micro
+from
+  dba_hist_system_event
+where
+  event_name = 'free buffer waits' or
+  event_name = 'write complete waits'
+order by
+  time_waited_micro desc)
+where rownum <= '%s'
+    """
+
+    SQL=SQL_BIND% (rownum)
+
+    cur = conn.cursor()
+    cur.execute(SQL)
+    res = cur.fetchall()
+
+    for a in range(len(res)):
+        a_list=[]
+        for b in range(len(res[a])):
+                str_chk = str(res[a][b])
                 #match = re.search(ur"^ ",str_chk)
                 #if match:
                   #str_chk = term.red+str_chk+term.normal
-    #            a_list.append(str_chk)
-    #    table_list.append(a_list)
+                a_list.append(str_chk)
+        table_list.append(a_list)
 
-    #headers = [term.blue+"INST","OBSOLETE","PQ_SLAVE_MISMATCH","TOP_LEVEL_CUR","REASON"+term.normal]
+    headers = [term.blue+"INST","SNAP_ID","EVENT","TOT_WAITS","TIME_WAIT_MICRO"+term.normal]
 
-    curr_time() 
-    #print tabulate(table_list,headers,tablefmt="plain")
-  
+    curr_time()
+    print tabulate(table_list,headers,tablefmt="plain")
+
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
@@ -1688,12 +1717,15 @@ try:
 	if sys.argv[1] == '-purge_cu':
 		conn = connection()
 		purge_cu(conn,sys.argv[2])
+	if sys.argv[1] == '-dbwr_bottleneck':
+		conn = connection()
+		dbwr_bottleneck(conn,sys.argv[2])
 
 except IndexError:
 	headers = [term.blue+"KEY","PARAMETERS","DESCRIPTIONS"+term.normal]
 	table_list=[]
 
-	param=[("-awt","\"enq: UL - contention\" \"fsf84tsn20htr\"","ash wait tree"),("-awth","\"event\" \"enq: TX - row lock contention\" 187370 187380", "ash wait tree history by event between snap_id"),("-awth","\"sql_id/top_level_sql_id\" \"fsf84tsn20htr\" 208030 208080","ash wait tree history by sql_id or top_level_sql_id between snap_id"),("-lt","none","lock tree"),("-as","none","active sessions"),("-sqlst","\"fsf84tsn20htr\"","sql_id statistics total"),("-sqlsd","\"fsf84tsn20htr\"","sql_id statistics delta"),("-sqlsts", "\"fsf84tsn20htr\" 208030","sql_id statistics total by snap_ip"),("-sqlsds", "\"fsf84tsn20htr\" 208030","sql_id statistics delta by snap_ip"),("-sqls_perexec", "\"fsf84tsn20htr\" 208030 208031","sql_id statistics per execution between snap_ip"),("-snapr","10","list of snapshots with limit rows"),("-snaps","62384","list when snap_id start and stop"),("-sqlmon","sql_id child_num plan_hash","sql plan for sql_id by sql_plan"),("-sqlmonh","\"05v2954zu3jgs\" \"3603852551\" 187370 187380","sql plan for sql_id by sql_plan between snap_id"),("-awth_sum", " sql_id/event \"05v2954zu3jgs\" 208030 208031","ash wait tree history by sql_id without group by sessions, just summarize the events"),("-clinfo","sid serial# inst_id","Shows information about session by sid and serial#"),("-sqltext","\"fsf84tsn20htr\"","Shows sql text"),("-sqlbind","\"fsf84tsn20htr\" snap_id","Shows related valiables"),("-tmp_consume","none","Shows how many temp space was consumed"),("-undo_consume","none","Shows some undo information"),("-undo_stat","\"05v2954zu3jgs\"","Shows undo statistic for sql_id"),("-lc_pin","none","library cache pin"),("-obj_stat","object_name sec in wait","Shows segment statistic for object"),("-time_model","inst_id","Shows time model by system"),("-proc_mem","sid","Shows consumed private memory"),("-top_sql_for_obj","object_name object_type operation","Shows top sql for object for special operation from ASH"),("-blocks_inv_sql","object_name object_type sql_id between snaps","Shows top blocks involved after sql had access to object. Info from dba_hist"),("-rowid_from_block","schema.table fno block","Shows ordered rowid by object"),("-top_30_event","","Show top 30 events for last 30 minutes"),("-eventh","snap_begin snap_end event","Shows events between snapshots. Be carefull with gap of snapshots, use one or two snapshots because there are to much information"),("-tab_stat","some table","Shows table and index statistics without partitions"),("-top_30_modules","","Shows top 30 modules from ASH"),("-sql_by_module","some module","Shows sql_id by module"),("-top_30_modulesh","snap_begin snap_end","Shows top modules between snaphots"),("-shared_cu","sql_id","Shows some information about shared cursors"),("-shared_cu_sum","sql_id","Shows versions of cursor"),("-purge_cu","sql_id","Purge cursor from SGA by sql_id")]
+	param=[("-awt","\"enq: UL - contention\" \"fsf84tsn20htr\"","ash wait tree"),("-awth","\"event\" \"enq: TX - row lock contention\" 187370 187380", "ash wait tree history by event between snap_id"),("-awth","\"sql_id/top_level_sql_id\" \"fsf84tsn20htr\" 208030 208080","ash wait tree history by sql_id or top_level_sql_id between snap_id"),("-lt","none","lock tree"),("-as","none","active sessions"),("-sqlst","\"fsf84tsn20htr\"","sql_id statistics total"),("-sqlsd","\"fsf84tsn20htr\"","sql_id statistics delta"),("-sqlsts", "\"fsf84tsn20htr\" 208030","sql_id statistics total by snap_ip"),("-sqlsds", "\"fsf84tsn20htr\" 208030","sql_id statistics delta by snap_ip"),("-sqls_perexec", "\"fsf84tsn20htr\" 208030 208031","sql_id statistics per execution between snap_ip"),("-snapr","10","list of snapshots with limit rows"),("-snaps","62384","list when snap_id start and stop"),("-sqlmon","sql_id child_num plan_hash","sql plan for sql_id by sql_plan"),("-sqlmonh","\"05v2954zu3jgs\" \"3603852551\" 187370 187380","sql plan for sql_id by sql_plan between snap_id"),("-awth_sum", " sql_id/event \"05v2954zu3jgs\" 208030 208031","ash wait tree history by sql_id without group by sessions, just summarize the events"),("-clinfo","sid serial# inst_id","Shows information about session by sid and serial#"),("-sqltext","\"fsf84tsn20htr\"","Shows sql text"),("-sqlbind","\"fsf84tsn20htr\" snap_id","Shows related valiables"),("-tmp_consume","none","Shows how many temp space was consumed"),("-undo_consume","none","Shows some undo information"),("-undo_stat","\"05v2954zu3jgs\"","Shows undo statistic for sql_id"),("-lc_pin","none","library cache pin"),("-obj_stat","object_name sec in wait","Shows segment statistic for object"),("-time_model","inst_id","Shows time model by system"),("-proc_mem","sid","Shows consumed private memory"),("-top_sql_for_obj","object_name object_type operation","Shows top sql for object for special operation from ASH"),("-blocks_inv_sql","object_name object_type sql_id between snaps","Shows top blocks involved after sql had access to object. Info from dba_hist"),("-rowid_from_block","schema.table fno block","Shows ordered rowid by object"),("-top_30_event","","Show top 30 events for last 30 minutes"),("-eventh","snap_begin snap_end event","Shows events between snapshots. Be carefull with gap of snapshots, use one or two snapshots because there are to much information"),("-tab_stat","some table","Shows table and index statistics without partitions"),("-top_30_modules","","Shows top 30 modules from ASH"),("-sql_by_module","some module","Shows sql_id by module"),("-top_30_modulesh","snap_begin snap_end","Shows top modules between snaphots"),("-shared_cu","sql_id","Shows some information about shared cursors"),("-shared_cu_sum","sql_id","Shows versions of cursor"),("-purge_cu","sql_id","Purge cursor from SGA by sql_id"),("-dbwr_bottleneck","num_row","Shows dbwr bottleneck")]
 
 	for a in range(len(param)):
 	  a_list=[]
