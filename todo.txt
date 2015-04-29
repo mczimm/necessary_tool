@@ -6,3 +6,4 @@
 - pga by sid
 - top pga
 - add degree to "-tab_stat" fuction 
+- add create and drop sql_patch
