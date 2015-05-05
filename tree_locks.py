@@ -1258,7 +1258,7 @@ def tab_stat(conn,table_name):
     print tabulate(table_list,headers,tablefmt="plain")
   
     SQL_IND ="""
-        select owner,index_name,index_type,table_name,uniqueness,clustering_factor,leaf_blocks,num_rows,status,last_analyzed,partitioned,visibility from dba_indexes where table_name = '%s'
+        select owner,index_name,index_type,table_name,uniqueness,clustering_factor,leaf_blocks,num_rows,status,last_analyzed,partitioned,visibility,degree from dba_indexes where table_name = '%s'
     """
 
     SQL2=SQL_IND% (table_name)
@@ -1277,7 +1277,7 @@ def tab_stat(conn,table_name):
                 a_list2.append(str_chk)
         table_list2.append(a_list2)
 
-    headers = [term.blue+"OWNER","NAME","TYPE","TABLE","UNIQ","CLUST_FACTOR","LEAF_BLOCKS","ROWS","STATUS","LAST_ANALYZED","PARTITIONED","VISIBLE"+term.normal]
+    headers = [term.blue+"OWNER","NAME","TYPE","TABLE","UNIQ","CLUST_FACTOR","LEAF_BLOCKS","ROWS","STATUS","LAST_ANALYZED","PARTITIONED","VISIBLE","DEGREE"+term.normal]
 
     print "\n"
     print term.green+"INDEXES"+term.normal
@@ -1608,6 +1608,108 @@ where rownum <= '%s'
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
+def top_pga(conn):
+  try:
+    SQL_BIND ="""
+	WITH pga AS 
+    (SELECT sid,
+            ROUND(SUM(CASE name WHEN 'session pga memory' 
+                       THEN VALUE / 1048576 END),2) pga_memory_mb,
+            ROUND(SUM(CASE name WHEN 'session pga memory max' 
+                      THEN VALUE / 1048576  END),2) max_pga_memory_mb
+      FROM gv$sesstat  
+      JOIN gv$statname  USING (statistic#)
+     WHERE name IN ('session pga memory','session pga memory max' )
+     GROUP BY sid)
+SELECT s.inst_id,sid, username,s.module, 
+       pga_memory_mb, 
+       max_pga_memory_mb, s.sql_id
+  FROM gv$session s
+  JOIN (SELECT sid, pga_memory_mb, max_pga_memory_mb,
+               RANK() OVER (ORDER BY pga_memory_mb DESC) pga_ranking
+         FROM pga)
+  USING (sid)
+  LEFT OUTER JOIN gv$sql sql 
+    ON  (s.sql_id=sql.sql_id and s.sql_child_number=sql.child_number)
+ WHERE pga_ranking <=5
+ ORDER BY  pga_ranking
+    """
+
+    SQL=SQL_BIND% ()
+
+    cur = conn.cursor()
+    cur.execute(SQL)
+    res = cur.fetchall()
+
+    for a in range(len(res)):
+        a_list=[]
+        for b in range(len(res[a])):
+                str_chk = str(res[a][b])
+                #match = re.search(ur"^ ",str_chk)
+                #if match:
+                  #str_chk = term.red+str_chk+term.normal
+                a_list.append(str_chk)
+        table_list.append(a_list)
+
+    headers = [term.blue+"INST","SID","USER","MODULE","PGA(MB)","MAX_PGA(MB)","SQL_ID"+term.normal]
+
+    curr_time()
+    print tabulate(table_list,headers,tablefmt="plain")
+
+  except cx_Oracle.DatabaseError,info:
+    print "Error: ",info
+
+def pga_by_sid(conn,sid,inst):
+  try:
+    SQL_BIND ="""
+	WITH pga AS 
+    (SELECT sid,
+            ROUND(SUM(CASE name WHEN 'session pga memory' 
+                       THEN VALUE / 1048576 END),2) pga_memory_mb,
+            ROUND(SUM(CASE name WHEN 'session pga memory max' 
+                      THEN VALUE / 1048576  END),2) max_pga_memory_mb
+      FROM gv$sesstat st
+      JOIN gv$statname  USING (statistic#)
+     WHERE name IN ('session pga memory','session pga memory max' ) and st.sid = '%s'
+     GROUP BY sid)
+SELECT s.inst_id,sid, username,s.module, 
+       pga_memory_mb, 
+       max_pga_memory_mb, s.sql_id
+  FROM gv$session s
+  JOIN (SELECT sid, pga_memory_mb, max_pga_memory_mb,
+               RANK() OVER (ORDER BY pga_memory_mb DESC) pga_ranking
+         FROM pga)
+  USING (sid)
+  LEFT OUTER JOIN gv$sql sql 
+    ON  (s.sql_id=sql.sql_id and s.sql_child_number=sql.child_number)
+ WHERE s.inst_id = '%s' and pga_ranking <=5
+ ORDER BY  pga_ranking
+    """
+
+    SQL=SQL_BIND% (sid,inst)
+
+    cur = conn.cursor()
+    cur.execute(SQL)
+    res = cur.fetchall()
+
+    for a in range(len(res)):
+        a_list=[]
+        for b in range(len(res[a])):
+                str_chk = str(res[a][b])
+                #match = re.search(ur"^ ",str_chk)
+                #if match:
+                  #str_chk = term.red+str_chk+term.normal
+                a_list.append(str_chk)
+        table_list.append(a_list)
+
+    headers = [term.blue+"INST","SID","USER","MODULE","PGA(MB)","MAX_PGA(MB)","SQL_ID"+term.normal]
+
+    curr_time()
+    print tabulate(table_list,headers,tablefmt="plain")
+
+  except cx_Oracle.DatabaseError,info:
+    print "Error: ",info
+
 try:
 	if sys.argv[1] == '-awt':
 		conn = connection()
@@ -1720,12 +1822,18 @@ try:
 	if sys.argv[1] == '-dbwr_bottleneck':
 		conn = connection()
 		dbwr_bottleneck(conn,sys.argv[2])
+	if sys.argv[1] == '-top_pga':
+		conn = connection()
+		top_pga(conn)
+	if sys.argv[1] == '-pga_by_sid':
+		conn = connection()
+		pga_by_sid(conn,sys.argv[2],sys.argv[3])
 
 except IndexError:
 	headers = [term.blue+"KEY","PARAMETERS","DESCRIPTIONS"+term.normal]
 	table_list=[]
 
-	param=[("-awt","\"enq: UL - contention\" \"fsf84tsn20htr\"","ash wait tree"),("-awth","\"event\" \"enq: TX - row lock contention\" 187370 187380", "ash wait tree history by event between snap_id"),("-awth","\"sql_id/top_level_sql_id\" \"fsf84tsn20htr\" 208030 208080","ash wait tree history by sql_id or top_level_sql_id between snap_id"),("-lt","none","lock tree"),("-as","none","active sessions"),("-sqlst","\"fsf84tsn20htr\"","sql_id statistics total"),("-sqlsd","\"fsf84tsn20htr\"","sql_id statistics delta"),("-sqlsts", "\"fsf84tsn20htr\" 208030","sql_id statistics total by snap_ip"),("-sqlsds", "\"fsf84tsn20htr\" 208030","sql_id statistics delta by snap_ip"),("-sqls_perexec", "\"fsf84tsn20htr\" 208030 208031","sql_id statistics per execution between snap_ip"),("-snapr","10","list of snapshots with limit rows"),("-snaps","62384","list when snap_id start and stop"),("-sqlmon","sql_id child_num plan_hash","sql plan for sql_id by sql_plan"),("-sqlmonh","\"05v2954zu3jgs\" \"3603852551\" 187370 187380","sql plan for sql_id by sql_plan between snap_id"),("-awth_sum", " sql_id/event \"05v2954zu3jgs\" 208030 208031","ash wait tree history by sql_id without group by sessions, just summarize the events"),("-clinfo","sid serial# inst_id","Shows information about session by sid and serial#"),("-sqltext","\"fsf84tsn20htr\"","Shows sql text"),("-sqlbind","\"fsf84tsn20htr\" snap_id","Shows related valiables"),("-tmp_consume","none","Shows how many temp space was consumed"),("-undo_consume","none","Shows some undo information"),("-undo_stat","\"05v2954zu3jgs\"","Shows undo statistic for sql_id"),("-lc_pin","none","library cache pin"),("-obj_stat","object_name sec in wait","Shows segment statistic for object"),("-time_model","inst_id","Shows time model by system"),("-proc_mem","sid","Shows consumed private memory"),("-top_sql_for_obj","object_name object_type operation","Shows top sql for object for special operation from ASH"),("-blocks_inv_sql","object_name object_type sql_id between snaps","Shows top blocks involved after sql had access to object. Info from dba_hist"),("-rowid_from_block","schema.table fno block","Shows ordered rowid by object"),("-top_30_event","","Show top 30 events for last 30 minutes"),("-eventh","snap_begin snap_end event","Shows events between snapshots. Be carefull with gap of snapshots, use one or two snapshots because there are to much information"),("-tab_stat","some table","Shows table and index statistics without partitions"),("-top_30_modules","","Shows top 30 modules from ASH"),("-sql_by_module","some module","Shows sql_id by module"),("-top_30_modulesh","snap_begin snap_end","Shows top modules between snaphots"),("-shared_cu","sql_id","Shows some information about shared cursors"),("-shared_cu_sum","sql_id","Shows versions of cursor"),("-purge_cu","sql_id","Purge cursor from SGA by sql_id"),("-dbwr_bottleneck","num_row","Shows dbwr bottleneck")]
+	param=[("-awt","\"enq: UL - contention\" \"fsf84tsn20htr\"","ash wait tree"),("-awth","\"event\" \"enq: TX - row lock contention\" 187370 187380", "ash wait tree history by event between snap_id"),("-awth","\"sql_id/top_level_sql_id\" \"fsf84tsn20htr\" 208030 208080","ash wait tree history by sql_id or top_level_sql_id between snap_id"),("-lt","none","lock tree"),("-as","none","active sessions"),("-sqlst","\"fsf84tsn20htr\"","sql_id statistics total"),("-sqlsd","\"fsf84tsn20htr\"","sql_id statistics delta"),("-sqlsts", "\"fsf84tsn20htr\" 208030","sql_id statistics total by snap_ip"),("-sqlsds", "\"fsf84tsn20htr\" 208030","sql_id statistics delta by snap_ip"),("-sqls_perexec", "\"fsf84tsn20htr\" 208030 208031","sql_id statistics per execution between snap_ip"),("-snapr","10","list of snapshots with limit rows"),("-snaps","62384","list when snap_id start and stop"),("-sqlmon","sql_id child_num plan_hash","sql plan for sql_id by sql_plan"),("-sqlmonh","\"05v2954zu3jgs\" \"3603852551\" 187370 187380","sql plan for sql_id by sql_plan between snap_id"),("-awth_sum", " sql_id/event \"05v2954zu3jgs\" 208030 208031","ash wait tree history by sql_id without group by sessions, just summarize the events"),("-clinfo","sid serial# inst_id","Shows information about session by sid and serial#"),("-sqltext","\"fsf84tsn20htr\"","Shows sql text"),("-sqlbind","\"fsf84tsn20htr\" snap_id","Shows related valiables"),("-tmp_consume","none","Shows how many temp space was consumed"),("-undo_consume","none","Shows some undo information"),("-undo_stat","\"05v2954zu3jgs\"","Shows undo statistic for sql_id"),("-lc_pin","none","library cache pin"),("-obj_stat","object_name sec in wait","Shows segment statistic for object"),("-time_model","inst_id","Shows time model by system"),("-proc_mem","sid","Shows consumed private memory"),("-top_sql_for_obj","object_name object_type operation","Shows top sql for object for special operation from ASH"),("-blocks_inv_sql","object_name object_type sql_id between snaps","Shows top blocks involved after sql had access to object. Info from dba_hist"),("-rowid_from_block","schema.table fno block","Shows ordered rowid by object"),("-top_30_event","","Show top 30 events for last 30 minutes"),("-eventh","snap_begin snap_end event","Shows events between snapshots. Be carefull with gap of snapshots, use one or two snapshots because there are to much information"),("-tab_stat","some table","Shows table and index statistics without partitions"),("-top_30_modules","","Shows top 30 modules from ASH"),("-sql_by_module","some module","Shows sql_id by module"),("-top_30_modulesh","snap_begin snap_end","Shows top modules between snaphots"),("-shared_cu","sql_id","Shows some information about shared cursors"),("-shared_cu_sum","sql_id","Shows versions of cursor"),("-purge_cu","sql_id","Purge cursor from SGA by sql_id"),("-dbwr_bottleneck","num_row","Shows dbwr bottleneck"),("-top_pga","","Shows top pga"),("-pga_by_sid","sid inst_id","Shows pga by sid")]
 
 	for a in range(len(param)):
 	  a_list=[]
