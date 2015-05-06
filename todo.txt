@@ -2,9 +2,5 @@
 - dump ash through alter system dump
 - top event between snapshot for particular sql id
 - kill session
-- ash pga
-- pga by sid
-- top pga
-- add degree to "-tab_stat" fuction 
 - add create and drop sql_patch
 - sql examples (http://www.morganslibrary.org/reference/pkgs/dbms_sqldiag.html)
