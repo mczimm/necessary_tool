@@ -1017,7 +1017,7 @@ def ash_wait_tree_hist_sum(conn,sql_or_event,sql_or_event_value,snap_b,snap_e):
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
-def ash_sqlmon(conn,sql_id,child,sql_plan):
+def ash_sqlmon(conn,sql_id,inst_id,child,sql_plan):
   try:
     ASH_SQLMON ="""
 	with ash as
@@ -1027,7 +1027,7 @@ def ash_sqlmon(conn,sql_id,child,sql_plan):
          decode(session_state,'WAITING',event,session_state) as EVENT,
          count(*) as WAIT_COUNT
     from gv$active_session_history
-   where sql_id = '%s' and sql_child_number = '%s'
+   where sql_id = '%s' and inst_id = '%s' and sql_child_number = '%s'
      and sql_plan_hash_value = nvl('%s', sql_plan_hash_value)
      --and NVL(sql_exec_id, 0) = nvl('&3', NVL(sql_exec_id, 0))
    group by sql_id, sql_plan_hash_value, sql_plan_line_id, decode(session_state,'WAITING',event,session_state)),
@@ -1073,8 +1073,8 @@ SELECT pt.id,
 CONNECT BY PRIOR pt.id = pt.parent_id
  START WITH pt.id = 0
                 """
-                
-    SQL=ASH_SQLMON% (sql_id,child,sql_plan)
+
+    SQL=ASH_SQLMON% (sql_id,inst_id,child,sql_plan)
                 
     cur = conn.cursor()
     cur.execute(SQL)
@@ -1094,6 +1094,31 @@ CONNECT BY PRIOR pt.id = pt.parent_id
 
     curr_time()
     print tabulate(table_list,headers,tablefmt="plain")
+
+    SQLMON ="""
+        select inst_id,status,module,action,sid,session_serial#,elapsed_time,cpu_time,fetches,buffer_gets,physical_read_bytes from gv$sql_monitor where sql_id= '%s' and inst_id = '%s'
+    """
+
+    SQLL=SQLMON% (sql_id,inst_id)
+
+    cur2 = conn.cursor()
+    cur2.execute(SQLL)
+    resa = cur2.fetchall()
+
+    for aa in range(len(resa)):
+      aa_list=[]
+      for bb in range(len(resa[aa])):
+        str_chka = str(resa[aa][bb])
+        #matcha = re.search(ur"^ ",str_chka)
+        #if matcha:
+          #str_chka = term.normal+str_chka+term.normal
+        aa_list.append(str_chka)
+      table_list2.append(aa_list)
+
+    headers2 = [term.blue+"INST","STATUS","MODULE","ACTION","SID","SER#","ELA","CPU","FETCH","BUFFER_GETS","PHY_READ_BYTE"+term.normal]
+
+    curr_time()
+    print tabulate(table_list2,headers2,tablefmt="plain")
 
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
@@ -1746,7 +1771,7 @@ try:
 		snap_stat(conn,sys.argv[2],'')
 	if sys.argv[1] == '-sqlmon':
 		conn = connection()
-		ash_sqlmon(conn,sys.argv[2],sys.argv[3],sys.argv[4])
+		ash_sqlmon(conn,sys.argv[2],sys.argv[3],sys.argv[4],sys.argv[5])
 	if sys.argv[1] == '-sqlmonh':
 		conn = connection()
 		ash_sqlmon_hist(conn,sys.argv[2],sys.argv[3],sys.argv[4],sys.argv[4])
