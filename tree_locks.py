@@ -703,6 +703,38 @@ def clinfo(conn,sid,serial,inst,sid2,serial2,inst2):
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
+def clinfoall(conn,sid):
+  try:
+    SQL_BIND ="""
+        select inst_id,sid,serial#,sql_id,sql_hash_value,module,action,row_wait_obj#,client_identifier,status,event
+        from gv$session where sid = %s
+    """
+
+    SQL=SQL_BIND% (sid)
+
+    cur = conn.cursor()
+    cur.execute(SQL)
+
+    res = cur.fetchall()
+
+    for a in range(len(res)):
+      a_list = []
+      for b in range(len(res[a])):
+        str_chk = str(res[a][b])
+        a_list.append(str_chk)
+      table_list.append(a_list)
+
+    headers = [term.blue+"INST","SID","SERIAL#","SQL_ID","PLAN","MODULE","ACTION","OBJECT_WAIT","CLIENT","STATUS","EVENT"+term.normal]
+
+    curr_time()
+    print term.green+"INFORMATION FROM SESSION"+term.normal
+    print tabulate(table_list,headers,tablefmt="plain")
+
+    curr_time()
+
+  except cx_Oracle.DatabaseError,info:
+    print "Error: ",info
+
 def top_sql_for_object(conn,obj,obj_type,sql_opt):
   cur = conn.cursor()
 
@@ -1590,18 +1622,18 @@ end;
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
-def kill_sess_by_username(conn,username):
+def kill_sess_by_username(conn,username,username2):
   try:
     SQL_BIND ="""
         declare
 begin
-  for i in (select sid as ssid,serial# as sser,inst_id as sinst from gv$session where upper(client_identifier) = upper('%s')) loop
+  for i in (select sid as ssid,serial# as sser,inst_id as sinst from gv$session where upper(client_identifier) = upper('%s') or upper(username) = upper('%s')) loop
     execute immediate 'alter system kill session '''||i.ssid||','||i.sser||',@'||i.sinst||'''';
   end loop;
 end;
     """
 
-    SQL=SQL_BIND% (username)
+    SQL=SQL_BIND% (username,username2)
 
     cur = conn.cursor()
     cur.execute(SQL)
@@ -2031,10 +2063,13 @@ try:
 		sql_profile_create(conn,sys.argv[2],sys.argv[3],sys.argv[4])
 	if sys.argv[1] == '-kill_sess_by_name':
 		conn = connection()
-		kill_sess_by_username(conn,sys.argv[2])
+		kill_sess_by_username(conn,sys.argv[2],sys.argv[2])
 	if sys.argv[1] == '-kill_sess_by_sid':
 		conn = connection()
 		kill_sess_by_sid(conn,sys.argv[2],sys.argv[3],sys.argv[4])
+	if sys.argv[1] == '-clinfoall':
+		conn = connection()
+		clinfoall(conn,sys.argv[2])
 
 except IndexError:
 	headers = [term.blue+"KEY","PARAMETERS","DESCRIPTIONS"+term.normal]
