@@ -1445,6 +1445,7 @@ def shared_cu(conn,sql_id):
        to_char(s.last_active_time, 'dd.mm hh24:mi') as last_active_time,
        round(s.elapsed_time/decode(s.EXECUTIONS,0,1,s.EXECUTIONS)) as ELA_PER_EXEC,
        s.PLAN_HASH_VALUE,
+       s.FULL_PLAN_HASH_VALUE,
        s.optimizer_cost,
        s.child_number as CHILD,
        s.IS_BIND_SENSITIVE as "BIND_SENSE",
@@ -1483,9 +1484,9 @@ order by s.inst_id, --s.child_number
                 a_list.append(str_chk)
         table_list.append(a_list)
 
-    desc = "EPE - ELA_PER_EXEC\n"+"BS - BIND_SENSITIVE\n"+"BA - BIND_AWARE\n"+"SH - SHARABLE\n"+"FS - FEEDBACK_STATISTIC\n"+"OS - OPTIMIZER_STATISTIC\n"+"BEF - BIND_EQUIV_FAILURE\n"+"RIM - ROLL_INVALID_MISMATCH\n"
+    desc = "EPE - ELA_PER_EXEC\n"+"BS - BIND_SENSITIVE\n"+"BA - BIND_AWARE\n"+"SH - SHARABLE\n"+"FS - FEEDBACK_STATISTIC\n"+"OS - OPTIMIZER_STATISTIC\n"+"BEF - BIND_EQUIV_FAILURE\n"+"RIM - ROLL_INVALID_MISMATCH\n"+"FULL_PLAN - it's a FULL_PLAN_HASH_VALUE new feature of 12c RDBMS\n"
     print desc
-    headers = [term.blue+"INST","EXEC","LOAD_TIME","OPENING","ACTIVE_TIME","EPE","PLAN","COST","CHILD","BS","BA","SH","FS","OS","BEF","RIM","ROWS","PARSE_CALLS"+term.normal]
+    headers = [term.blue+"INST","EXEC","LOAD_TIME","OPENING","ACTIVE_TIME","EPE","PLAN","FULL_PLAN","COST","CHILD","BS","BA","SH","FS","OS","BEF","RIM","ROWS","PARSE_CALLS"+term.normal]
 
     curr_time()
     print tabulate(table_list,headers,tablefmt="plain")
