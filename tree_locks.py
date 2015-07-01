@@ -473,6 +473,7 @@ def sql_stat(conn,sql_id,total):
     if total == 'true':
       SQL_STAT_TOTAL="""select * from (
 	select hsqls.snap_id as ID,
+	hsqls.plan_hash_value as PLAN,
 	hsqls.sql_id as SQL,
 	hsqls.optimizer_cost as COST,
 	hsqls.sorts_total as SORTS,
@@ -496,6 +497,7 @@ def sql_stat(conn,sql_id,total):
     if total == 'false':
       SQL_STAT_DELTA="""select * from (
         select hsqls.snap_id as ID,
+	hsqls.plan_hash_value as PLAN,
         hsqls.sql_id as SQL,
         hsqls.optimizer_cost as COST,
         hsqls.sorts_delta as SORTS,
@@ -526,7 +528,7 @@ def sql_stat(conn,sql_id,total):
         a_list.append(str_chk)
       table_list.append(a_list)
 
-    headers = [term.blue+"SNAP","SQL","COST","SORTS","EXEC","PARSES","BUFFERS","ROWS","CPU_TIME","IOWAITS","APWAITS","CCWAITS","BYTES_READ","BYTES_WRITE","ELAPSED"+term.normal]
+    headers = [term.blue+"SNAP","PLAN","SQL","COST","SORTS","EXEC","PARSES","BUFFERS","ROWS","CPU_TIME","IOWAITS","APWAITS","CCWAITS","BYTES_READ","BYTES_WRITE","ELAPSED"+term.normal]
 
     curr_time()
     print tabulate(table_list,headers,tablefmt="plain")
