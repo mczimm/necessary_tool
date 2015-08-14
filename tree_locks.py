@@ -1844,7 +1844,17 @@ end;
     SQL=SQL_BIND% (sql,plan,desc)
 
     cur = conn.cursor()
+    cur.callproc("dbms_output.enable")
     cur.execute(SQL)
+
+    status = cur.var(cx_Oracle.NUMBER)
+    line = cur.var(cx_Oracle.STRING)
+
+    while True:
+      cur.callproc("dbms_output.get_line", (line, status))
+      if status.getvalue() != 0:
+        break
+      print line.getvalue()
 
     curr_time()
 
