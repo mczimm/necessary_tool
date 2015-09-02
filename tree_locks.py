@@ -1994,10 +1994,11 @@ select * from (select count(*),event from dba_hist_active_sess_history where sql
 def ind_col(conn,ind):
   try:
     SQL_BIND ="""
-select index_owner,table_name,column_name,descend from dba_ind_columns where index_name = upper('%s')
+select index_owner,table_name,column_name,descend from dba_ind_columns where index_name = upper('%s') or index_name = '%s'
     """
 
-    SQL=SQL_BIND% (ind)
+    ind2 = ind
+    SQL=SQL_BIND% (ind,ind2)
 
     cur = conn.cursor()
     cur.execute(SQL)
