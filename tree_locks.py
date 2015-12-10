@@ -490,7 +490,7 @@ def sql_stat(conn,sql_id,total):
 	hsqls.elapsed_time_total as ELAPSED
 	from dba_hist_sqlstat hsqls
 	where sql_id = '%s'
-	order by 1 desc) where rownum <= 30
+	order by 1 desc) where rownum <= 300
       """
       SQL=SQL_STAT_TOTAL% (sql_id)
 
@@ -514,7 +514,7 @@ def sql_stat(conn,sql_id,total):
         hsqls.elapsed_time_delta as ELAPSED
         from dba_hist_sqlstat hsqls
         where sql_id = '%s'
-        order by 1 desc) where rownum <= 30
+        order by 1 desc) where rownum <= 300
       """
       SQL=SQL_STAT_DELTA% (sql_id)
 
@@ -2078,7 +2078,7 @@ def ctas_ash(conn):
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
-def tun_task_create(conn,sql_id):
+def tune_task_create(conn,sql_id):
   try:
     SQL_BIND ="""
 DECLARE
@@ -2093,15 +2093,35 @@ END;
     sql3 = sql_id
     SQL=SQL_BIND% (sql1,sql2,sql3)
 
+    print 'Creating sql tuning task has been started. It will take a while, but no more than 20 min.\n'
+
     cur = conn.cursor()
     cur.execute(SQL)
     curr_time()
-    print 'Please execute SELECT DBMS_SQLTUNE.report_tuning_task(''task_%s'') AS recommendations FROM dual'
+
+    sql4 = """SELECT DBMS_SQLTUNE.report_tuning_task('task_%s') AS recommendations FROM dual""" % sql1
+    cur.execute(sql4)
+
+    res = cur.fetchall()
+
+    for a in range(len(res)):
+        a_list=[]
+        for b in range(len(res[a])):
+                str_chk = str(res[a][b])
+                #match = re.search(ur"^ ",str_chk)
+                #if match:
+                  #str_chk = term.red+str_chk+term.normal
+                a_list.append(str_chk)
+        table_list.append(a_list)
+
+    headers = [term.blue+"RECOMMENDATIONS"+term.normal]
+    curr_time()
+    print tabulate(table_list,headers,tablefmt="plain")
 
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
 
-def tun_task_drop(conn,task_name):
+def tune_task_drop(conn,task_name):
   try:
     SQL_BIND ="""
 BEGIN
@@ -2311,10 +2331,10 @@ try:
 	if sys.argv[1] == '-lc_obj':
 		conn = connection()
 		lc_obj(conn,sys.argv[2])
-	if sys.argv[1] == '-tun_task_create':
+	if sys.argv[1] == '-tune_task_create':
 		conn = connection()
 		tun_task_create(conn,sys.argv[2])
-	if sys.argv[1] == '-tun_task_drop':
+	if sys.argv[1] == '-tune_task_drop':
                 conn = connection()
                 tun_task_drop(conn,sys.argv[2])
 
@@ -2322,7 +2342,7 @@ except IndexError:
 	headers = [term.blue+"KEY","PARAMETERS","DESCRIPTIONS"+term.normal]
 	table_list=[]
 
-	param=[("-awt","\"enq: UL - contention\" \"fsf84tsn20htr\"","ash wait tree"),("-awth","\"event\" \"enq: TX - row lock contention\" 187370 187380", "ash wait tree history by event between snap_id"),("-awth","\"sql_id/top_level_sql_id\" \"fsf84tsn20htr\" 208030 208080","ash wait tree history by sql_id or top_level_sql_id between snap_id"),("-lt","none","lock tree"),("-as","none","active sessions"),("-sqlst","\"fsf84tsn20htr\"","sql_id statistics total"),("-sqlsd","\"fsf84tsn20htr\"","sql_id statistics delta"),("-sqlsts", "\"fsf84tsn20htr\" 208030","sql_id statistics total by snap_ip"),("-sqlsds", "\"fsf84tsn20htr\" 208030","sql_id statistics delta by snap_ip"),("-sqls_perexec", "\"fsf84tsn20htr\" 208030 208031","sql_id statistics per execution between snap_ip"),("-snapr","10","list of snapshots with limit rows"),("-snaps","62384","list when snap_id start and stop"),("-sqlmon","sql_id inst_id child_num plan_hash","sql plan for sql_id by sql_plan"),("-sqlmonh","\"05v2954zu3jgs\" \"3603852551\" 187370 187380","sql plan for sql_id by sql_plan between snap_id"),("-awth_sum", " sql_id/event \"05v2954zu3jgs\" 208030 208031","ash wait tree history by sql_id without group by sessions, just summarize the events"),("-clinfo","sid serial# inst_id","Shows information about session by sid and serial#"),("-clinfoall","sid", "Shows all sessions by sid"),("-sqltext","\"fsf84tsn20htr\"","Shows sql text"),("-sqlbind","\"fsf84tsn20htr\" snap_id","Shows related valiables"),("-tmp_consume","none","Shows how many temp space was consumed"),("-undo_consume","none","Shows some undo information"),("-undo_stat","\"05v2954zu3jgs\"","Shows undo statistic for sql_id"),("-lc_pin","none","library cache pin"),("-obj_stat","object_name sec in wait","Shows segment statistic for object"),("-time_model","inst_id","Shows time model by system"),("-proc_mem","sid","Shows consumed private memory"),("-top_sql_for_obj","object_name object_type operation","Shows top sql for object for special operation from ASH"),("-blocks_inv_sql","object_name object_type sql_id between snaps","Shows top blocks involved after sql had access to object. Info from dba_hist"),("-rowid_from_block","schema.table fno block","Shows ordered rowid by object"),("-top_event_for_sql","sql_id b_snap e_snap","Shows top events from dba_hist for particular sql_id"),("-top_30_event","","Shows top 30 events for last 30 minutes"),("-eventh","snap_begin snap_end event","Shows events between snapshots. Be carefull with gap of snapshots, use one or two snapshots because there are to much information"),("-tab_stat","some table","Shows table and index statistics without partitions"),("-top_30_modules","","Shows top 30 modules from ASH"),("-sql_by_module","some module","Shows sql_id by module"),("-top_30_modulesh","snap_begin snap_end","Shows top modules between snaphots"),("-shared_cu","sql_id","Shows some information about shared cursors"),("-shared_cu_sum","sql_id","Shows versions of cursor"),("-purge_cu","sql_id","Purge cursor from SGA by sql_id"),("-dbwr_bottleneck","num_row","Shows dbwr bottleneck"),("-top_pga","","Shows top pga"),("-pga_by_sid","sid inst_id","Shows pga by sid"),("-bl_create","sql_id plan_hash description","Make base line for sql"),("-sql_patch_create","sql_id hint description","Make sql_patch for sql"),("-sql_patch_drop","patch name","Drop sql_patch"),("-sql_profile_create","sql_id plan_hash description","Make SQL PROFILE for sql. You can take plan_hash from dba_hist_sql_plan"),("-sql_profile_drop","profile name","Drop sql_profile"),("-kill_sess_by_name","username","Killing all user sessions by username"),("-kill_sess_by_sid","sid serial# inst_id","Killing particular session"),("-ind_col","index_name","Shows which columns are included in the index"),("-report_col_usage","OWNER TABLE","Shows usage column report from dbms_stats.report_col_usage"),("-ctas_ash","","Cretae table as select * from ASH"),("-lc_obj","object name or nothing","Shows locked objects"),("-tun_task_create","sql_id","It makes sql tunning task through dbms_sqltune.create_tuning_task")]
+	param=[("-awt","\"enq: UL - contention\" \"fsf84tsn20htr\"","ash wait tree"),("-awth","\"event\" \"enq: TX - row lock contention\" 187370 187380", "ash wait tree history by event between snap_id"),("-awth","\"sql_id/top_level_sql_id\" \"fsf84tsn20htr\" 208030 208080","ash wait tree history by sql_id or top_level_sql_id between snap_id"),("-lt","none","lock tree"),("-as","none","active sessions"),("-sqlst","\"fsf84tsn20htr\"","sql_id statistics total"),("-sqlsd","\"fsf84tsn20htr\"","sql_id statistics delta"),("-sqlsts", "\"fsf84tsn20htr\" 208030","sql_id statistics total by snap_ip"),("-sqlsds", "\"fsf84tsn20htr\" 208030","sql_id statistics delta by snap_ip"),("-sqls_perexec", "\"fsf84tsn20htr\" 208030 208031","sql_id statistics per execution between snap_ip"),("-snapr","10","list of snapshots with limit rows"),("-snaps","62384","list when snap_id start and stop"),("-sqlmon","sql_id inst_id child_num plan_hash","sql plan for sql_id by sql_plan"),("-sqlmonh","\"05v2954zu3jgs\" \"3603852551\" 187370 187380","sql plan for sql_id by sql_plan between snap_id"),("-awth_sum", " sql_id/event \"05v2954zu3jgs\" 208030 208031","ash wait tree history by sql_id without group by sessions, just summarize the events"),("-clinfo","sid serial# inst_id","Shows information about session by sid and serial#"),("-clinfoall","sid", "Shows all sessions by sid"),("-sqltext","\"fsf84tsn20htr\"","Shows sql text"),("-sqlbind","\"fsf84tsn20htr\" snap_id","Shows related valiables"),("-tmp_consume","none","Shows how many temp space was consumed"),("-undo_consume","none","Shows some undo information"),("-undo_stat","\"05v2954zu3jgs\"","Shows undo statistic for sql_id"),("-lc_pin","none","library cache pin"),("-obj_stat","object_name sec in wait","Shows segment statistic for object"),("-time_model","inst_id","Shows time model by system"),("-proc_mem","sid","Shows consumed private memory"),("-top_sql_for_obj","object_name object_type operation","Shows top sql for object for special operation from ASH"),("-blocks_inv_sql","object_name object_type sql_id between snaps","Shows top blocks involved after sql had access to object. Info from dba_hist"),("-rowid_from_block","schema.table fno block","Shows ordered rowid by object"),("-top_event_for_sql","sql_id b_snap e_snap","Shows top events from dba_hist for particular sql_id"),("-top_30_event","","Shows top 30 events for last 30 minutes"),("-eventh","snap_begin snap_end event","Shows events between snapshots. Be carefull with gap of snapshots, use one or two snapshots because there are to much information"),("-tab_stat","some table","Shows table and index statistics without partitions"),("-top_30_modules","","Shows top 30 modules from ASH"),("-sql_by_module","some module","Shows sql_id by module"),("-top_30_modulesh","snap_begin snap_end","Shows top modules between snaphots"),("-shared_cu","sql_id","Shows some information about shared cursors"),("-shared_cu_sum","sql_id","Shows versions of cursor"),("-purge_cu","sql_id","Purge cursor from SGA by sql_id"),("-dbwr_bottleneck","num_row","Shows dbwr bottleneck"),("-top_pga","","Shows top pga"),("-pga_by_sid","sid inst_id","Shows pga by sid"),("-bl_create","sql_id plan_hash description","Make base line for sql"),("-sql_patch_create","sql_id hint description","Make sql_patch for sql"),("-sql_patch_drop","patch name","Drop sql_patch"),("-sql_profile_create","sql_id plan_hash description","Make SQL PROFILE for sql. You can take plan_hash from dba_hist_sql_plan"),("-sql_profile_drop","profile name","Drop sql_profile"),("-kill_sess_by_name","username","Killing all user sessions by username"),("-kill_sess_by_sid","sid serial# inst_id","Killing particular session"),("-ind_col","index_name","Shows which columns are included in the index"),("-report_col_usage","OWNER TABLE","Shows usage column report from dbms_stats.report_col_usage"),("-ctas_ash","","Cretae table as select * from ASH"),("-lc_obj","object name or nothing","Shows locked objects"),("-tune_task_create","sql_id","It makes sql tunning task through dbms_sqltune.create_tuning_task"),("-tune_task_drop","sql_id","Drop task")]
 
 	for a in range(len(param)):
 	  a_list=[]
