@@ -2333,10 +2333,10 @@ try:
 		lc_obj(conn,sys.argv[2])
 	if sys.argv[1] == '-tune_task_create':
 		conn = connection()
-		tun_task_create(conn,sys.argv[2])
+		tune_task_create(conn,sys.argv[2])
 	if sys.argv[1] == '-tune_task_drop':
                 conn = connection()
-                tun_task_drop(conn,sys.argv[2])
+                tune_task_drop(conn,sys.argv[2])
 
 except IndexError:
 	headers = [term.blue+"KEY","PARAMETERS","DESCRIPTIONS"+term.normal]
