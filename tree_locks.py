@@ -2108,14 +2108,11 @@ END;
         a_list=[]
         for b in range(len(res[a])):
                 str_chk = str(res[a][b])
-                #match = re.search(ur"^ ",str_chk)
-                #if match:
-                  #str_chk = term.red+str_chk+term.normal
-                a_list.append(str_chk)
+		str_dec = str_chk.decode('utf-8')
+                a_list.append(str_dec)
         table_list.append(a_list)
 
     headers = [term.blue+"RECOMMENDATIONS"+term.normal]
-    curr_time()
     print tabulate(table_list,headers,tablefmt="plain")
 
   except cx_Oracle.DatabaseError,info:
