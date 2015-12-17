@@ -917,10 +917,8 @@ def sql_text(conn,sql_id):
         a_list=[]
         for b in range(len(res[a])):
                 str_chk = str(res[a][b])
-                #match = re.search(ur"\n",str_chk)
-                #if match:
-                  #str_chk = str_chk+"  "
-                a_list.append(str_chk)
+		str_dec = str_chk.decode('utf-8')
+                a_list.append(str_dec)
         table_list.append(a_list)
 
     headers = [term.blue+"SQL_TEXT"+term.normal]
