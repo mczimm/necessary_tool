@@ -1289,7 +1289,7 @@ def eventh(conn,snap_begin,snap_end,event):
 def tab_stat(conn,table_name):
   try:
     SQL_TAB ="""
-	select owner,table_name,tablespace_name,status,num_rows,blocks,last_analyzed,partitioned,temporary,chain_cnt from all_tables where table_name = '%s'
+	select owner,table_name,tablespace_name,status,num_rows,blocks,last_analyzed,partitioned,temporary,chain_cnt from all_tables where upper(table_name) = upper('%s')
     """
 
     SQL=SQL_TAB% (table_name)
