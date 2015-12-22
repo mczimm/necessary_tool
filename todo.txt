@@ -1,3 +1,6 @@
-- dump ASH through create as select
 - dump ash through alter system dump
 - sql examples (http://www.morganslibrary.org/reference/pkgs/dbms_sqldiag.html)
+- Error:  ORA-13829: SQL profile or patch named OEBSADMIN-3162 already exists
+- bl_drop
+- compare plans
+- show what in patch,profile,baseline
