@@ -155,6 +155,7 @@ def temp_consume(conn):
 	SELECT   S.inst_id, S.sid, S.serial#, S.username, S.client_identifier, P.spid, S.module, S.program, SUM (T.blocks) * TBS.block_size / 1024 / 1024 as "mb_used", T.tablespace, COUNT(*) as "sort_ops"
 	FROM     gv$sort_usage T, gv$session S, dba_tablespaces TBS, gv$process P
 	WHERE    T.session_addr = S.saddr
+	AND	 T.sql_id = S.sql_id
 	AND      S.paddr = P.addr
 	AND      T.tablespace = TBS.tablespace_name
 	GROUP BY S.inst_id, S.sid, S.serial#, S.username, S.client_identifier, P.spid, S.module, S.program, TBS.block_size, T.tablespace
