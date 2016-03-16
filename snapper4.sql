@@ -1,6 +1,6 @@
-------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 --
--- File name:   snapper4.sql (Oracle Session Snapper v4)
+-- File name:   snapper.sql (Oracle Session Snapper v4)
 -- Purpose:     An easy to use Oracle session-level performance measurement tool
 --              which does NOT require any database changes nor creation of any
 --              database objects!
@@ -20,6 +20,7 @@
 --              The output is formatted the way it could be easily post-processed
 --              by either Unix string manipulation tools or loaded to spreadsheet.
 --
+--              Snapper v4.20 Oracle 12c CDB and PDB grouping
 --              Snapper v4 supports RAC and requires Oracle 10.1 or a newer DB version.
 --              Snapper v3.5 works on Oracle versions starting from Oracle 9.2 (no RAC support)
 --
@@ -51,12 +52,12 @@
 --                 servers or DBA workstations 
 --
 --
--- Thanks to:   Adrian Billington, Jamey Johnston, Marcus Mönnig, Hans-Peter Sloot
---              and Ronald Rood for bugfixes, additions and improvements
+-- Thanks to:   Adrian Billington, Jamey Johnston, Marcus Mönnig, Hans-Peter Sloot,
+--              Ronald Rood and Peter Bach for bugfixes, additions and improvements
 --
 --------------------------------------------------------------------------------
 --
---   The Session Snapper v4.10 BETA ( USE AT YOUR OWN RISK !!! )
+--   The Session Snapper v4.24 ( USE AT YOUR OWN RISK !!! )
 --   (c) Tanel Poder ( http://blog.tanelpoder.com )
 --
 --
@@ -164,7 +165,7 @@
 --      if you want to snap ALL sids, use "all" as value for
 --      <sids_to_snap> parameter
 --
---      alternatively you can used "select sid from gv$session" as value for <sids_to_snap>
+--      alternatively you can use "select sid from gv$session" as value for <sids_to_snap>
 --      parameter to capture all SIDs. you can write any query (with multiple and/or)
 --      conditions to specify complex rules for capturing only the SIDs you want
 --
@@ -258,6 +259,8 @@ define     snapper_sid="&4"
 -- different Oracle versions, script parameters or granted privileges some
 -- statements might not compile if not adjusted properly.
 
+define _IF_ORA12_OR_HIGHER="--"
+define _IF_LOWER_THAN_ORA12="--"
 define _IF_ORA11_OR_HIGHER="--"
 define _IF_LOWER_THAN_ORA11="--"
 define _IF_DBMS_SYSTEM_ACCESSIBLE="/* dbms_system is not accessible" 
@@ -276,7 +279,11 @@ define _MANUAL_SNAPSHOT="--"
 define _USE_DBMS_LOCK=""
 
 -- set the noprint's value to "noprint" if you don't want these temporary variables to show up in a sqlplus spool file
+-- however, setting noprint="noprint" can cause errors in Oracle SQL Developer v4.0.x for some reason (OK in v4.1)
 DEF noprint=""
+col snapper_ora12higher    &noprint new_value _IF_ORA12_OR_HIGHER
+col snapper_ora12lower     &noprint new_value _IF_LOWER_THAN_ORA12
+col snapper_ora12          &noprint new_value _IF_ORA12_OR_HIGHER
 col snapper_ora11higher    &noprint new_value _IF_ORA11_OR_HIGHER
 col snapper_ora11lower     &noprint new_value _IF_LOWER_THAN_ORA11
 col dbms_system_accessible &noprint new_value _IF_DBMS_SYSTEM_ACCESSIBLE
@@ -358,7 +365,9 @@ begin
 
     -- compute sid_filter
     case
-        when trim(lower('&ssid_begin')) like 'sid=%'       then lv_sid_filter   := 's.sid in ('||get_filter('&ssid_begin')||')'; --||trim(replace('&ssid_begin','sid=',''))||')';
+        when trim(lower('&ssid_begin')) like 'con_id=%'    then lv_sid_filter   := 's.con_id in ('||get_filter('&ssid_begin')||')';
+        when trim(lower('&ssid_begin')) like 'sid=%'       then lv_sid_filter   := 's.sid in ('   ||get_filter('&ssid_begin')||')'; 
+        when trim(lower('&ssid_begin')) like 'audsid=%'    then lv_sid_filter   := 's.audsid in ('||get_filter('&ssid_begin')||')'; 
         when trim(lower('&ssid_begin')) like 'user=%'      then lv_sid_filter   := 'lower(username) like '''         ||get_filter('&ssid_begin')||'''';
         when trim(lower('&ssid_begin')) like 'username=%'  then lv_sid_filter   := 'lower(username) like '''         ||get_filter('&ssid_begin')||'''';
         when trim(lower('&ssid_begin')) like 'machine=%'   then lv_sid_filter   := 'lower(machine) like '''          ||get_filter('&ssid_begin')||'''';
@@ -370,7 +379,7 @@ begin
         when trim(lower('&ssid_begin')) like 'client_id=%' then lv_sid_filter   := 'lower(client_identifier) like '''||get_filter('&ssid_begin')||'''';
         when trim(lower('&ssid_begin')) like 'spid=%'      then lv_sid_filter   := '(s.inst_id,s.paddr) in (select /*+ UNNEST */ inst_id,addr from gv$process where spid in ('||get_filter('&ssid_begin')||'))';
         when trim(lower('&ssid_begin')) like 'ospid=%'     then lv_sid_filter   := '(s.inst_id,s.paddr) in (select /*+ UNNEST */ inst_id,addr from gv$process where spid in ('||get_filter('&ssid_begin')||'))';
-        when trim(lower('&ssid_begin')) like 'pid=%'       then lv_sid_filter   := '(s.inst_id,s.paddr) in (select /*+ NO_UNNEST */ inst_id,addr from gv$process where spid in ('||get_filter('&ssid_begin')||'))';
+        when trim(lower('&ssid_begin')) like 'pid=%'       then lv_sid_filter   := '(s.inst_id,s.paddr) in (select /*+ UNNEST */ inst_id,addr from gv$process where spid in ('||get_filter('&ssid_begin')||'))';
         when trim(lower('&ssid_begin')) like 'qcsid=%'     then lv_sid_filter   := '(s.inst_id,s.sid)   in (select /*+ NO_UNNEST */ inst_id,sid from gv$px_session where qcsid in ('||get_filter('&ssid_begin')||'))';
         when trim(lower('&ssid_begin')) like 'qc=%'        then lv_sid_filter   := '(s.inst_id,s.sid)   in (select /*+ NO_UNNEST */ inst_id,sid from gv$px_session where qcsid in ('||get_filter('&ssid_begin')||'))';
         when trim(lower('&ssid_begin')) like 'all%'        then lv_sid_filter   := '1=1';
@@ -379,13 +388,11 @@ begin
         when trim(lower('&ssid_begin')) like 'smon%'       then lv_sid_filter   := 'program like ''%(SMON)%''';
         when trim(lower('&ssid_begin')) like 'pmon%'       then lv_sid_filter   := 'program like ''%(PMON)%''';
         when trim(lower('&ssid_begin')) like 'ckpt%'       then lv_sid_filter   := 'program like ''%(CKPT)%''';
-        when trim(lower('&ssid_begin')) like 'lgwr%'       then lv_sid_filter   := 'program like ''%(LGWR)%''';
-        when trim(lower('&ssid_begin')) like 'dbwr%'       then lv_sid_filter   := 'program like ''%(DBW%)%''';
-        when trim(lower('&ssid_begin')) like 'select%'     then /*lv_inst_filter  := '/* inst_filter2  1=1'; */ lv_sid_filter := q'{(s.inst_id,s.sid) in (&snapper_sid)}';
-        --when trim(lower('&ssid_begin')) like 'select%'     then lv_sid_filter := '(s.inst_id,s.sid) in ('||regexp_replace(replace(q'{&snapper_sid}','',''''''), '^select ', 'select /*+ unnest */ ', 1, 1, 'i')||')'; -- '1=1'; lv_inst_filter := '1=1';
-        --when trim(lower('&ssid_begin')) like 'with%'       then lv_sid_filter := '(s.inst_id,s.sid) in (&snapper_sid)'; -- '1=1'; lv_inst_filter := '1=1';
-        when trim(lower('&ssid_begin')) like '(%'          then lv_inst_filter := '/* inst_filter2 */ 1=1'; lv_sid_filter := q'{(s.inst_id,s.sid) in (&snapper_sid)}'; -- '1=1'; lv_inst_filter := '1=1';
-        else                                                    lv_sid_filter   := '/* sid_filter_else_cond */ s.sid in ('||get_filter('&ssid_begin')||')'; --lv_sid_filter := '/* sid_filter_else_cond */ s.sid in (&ssid_begin)';
+        when trim(lower('&ssid_begin')) like 'lgwr%'       then lv_sid_filter   := 'program like ''%(LG__)%'''; -- 12c multiple adaptive LGWR workers
+        when trim(lower('&ssid_begin')) like 'dbwr%'       then lv_sid_filter   := 'regexp_like(program, ''.*\((DBW.|BW..)\).*'', ''i'')';
+        when trim(lower('&ssid_begin')) like 'select%'     then lv_sid_filter   := q'{(s.inst_id,s.sid) in (&snapper_sid)}';
+        when trim(lower('&ssid_begin')) like '(%'          then lv_inst_filter  := '/* inst_filter2 */ 1=1'; lv_sid_filter := q'{(s.inst_id,s.sid) in (&snapper_sid)}'; 
+        else                                                    lv_sid_filter   := '/* sid_filter_else_cond */ s.sid in ('||get_filter('&ssid_begin')||')'; 
     end case;
 
     :inst_filter := lv_inst_filter;
@@ -424,10 +431,9 @@ with mod_banner as (
     where rownum = 1
 )
 select
-    decode(substr(banner, instr(banner, 'Release ')+8,2), '09', '--', '') snapper_ora10lower,
-    decode(substr(banner, instr(banner, 'Release ')+8,2), '09', '',  '--') snapper_ora9,
-    decode(substr(banner, instr(banner, 'Release ')+8,1), '1',  '',  '--') snapper_ora10higher,
-    case when substr(banner, instr(banner, 'Release ')+8,2) >= '11' then '' else '--' end snapper_ora11higher,
+    case when substr(banner, instr(banner, 'Release ')+8,2) >= '12' then '' else '--' end snapper_ora12higher,
+    case when substr(banner, instr(banner, 'Release ')+8,2)  < '12' then '' else '--' end snapper_ora12lower,
+    case when substr(banner, instr(banner, 'Release ')+8,2)  = '11' then '' else '--' end snapper_ora11higher,
     case when substr(banner, instr(banner, 'Release ')+8,2)  < '11' then '' else '--' end snapper_ora11lower,
     nvl(:v, '/* dbms_system is not accessible') dbms_system_accessible,
     nvl(:x, '--') x_accessible,
@@ -443,7 +449,12 @@ from
     mod_banner
 /
 
-set termout on serveroutput on size 1000000 format wrapped
+-- current workaround: 1st serveroutput command below is for sql developer compatibility
+-- 2nd is for sqlplus, so that newlines and leading spaces get properly printed
+set termout off
+set serveroutput on size 1000000 
+set serveroutput on size 1000000 format wrapped
+set termout on
 
 prompt Sampling SID &4 with interval &snapper_sleep seconds, taking &snapper_count snapshots...
 
@@ -556,6 +567,9 @@ declare
     g_ash_columns1    varchar2(1000) := 'inst_id + event + p1 + wait_class';
     g_ash_columns2    varchar2(1000) := 'inst_id + sid + user + machine + program';
     g_ash_columns3    varchar2(1000) := 'inst_id + plsql_object_id + plsql_subprogram_id + sql_id';
+    g_ash_columns4    varchar2(1000) := 'con_id + inst_id + sql_id + sql_child_number + event + wait_class';
+    g_ash_columns5    varchar2(1000) := 'con_id + inst_id + event + p1 + wait_class';
+    g_ash_columns6    varchar2(1000) := 'con_id + inst_id + sid + user + machine + program';
 		
     -- output column configuration
     output_header     number := 0; -- 1=true 0=false
@@ -576,6 +590,9 @@ declare
     output_eventcnt_s number := 1; -- wait event count
     output_eventavg   number := 1; -- average wait duration
     output_pcthist    number := 1; -- percent of total visual bar (histogram) -- Histograms seem to work for me on 9.2.0.7 + - JBJ2)
+
+    output_actses     number := 1; -- show Average Active Sessions (AAS) in "ASH" activity section
+    output_actses_pct number := 1; -- show AAS as a percentage of a single thread time
 
     -- column widths in ASH report output
     w_inst_id                     number :=  4;
@@ -608,8 +625,10 @@ declare
     w_action                      number := 25;
     w_client_identifier           number := 25;
     w_service_name                number := 25;
+    w_con_id                      number :=  6;
 
-    w_activity_pct                number :=  7;
+    w_actses                      number :=  8;
+    w_actses_pct                  number := 10;
 
     -- END CONFIGURABLE STUFF --
 
@@ -644,6 +663,7 @@ declare
     s_action                       constant number := 28 ;
     s_client_identifier            constant number := 29 ;
     s_service_name                 constant number := 30 ;
+    s_con_id                       constant number := 31 ;
 
     -- constants for ash collection reporting, which columns to show in report
     c_inst_id                      constant number := power(2, s_inst_id                  );
@@ -676,6 +696,7 @@ declare
     c_action                       constant number := power(2, s_action                   );
     c_client_identifier            constant number := power(2, s_client_identifier        );
     c_service_name                 constant number := power(2, s_service_name             );
+    c_con_id                       constant number := power(2, s_con_id                   );
 
 
   /*---------------------------------------------------
@@ -819,6 +840,7 @@ declare
 
     /*---------------------------------------------------
      -- function for calculating useful averages and ratios between metrics
+     -- it is totally OK to show ratios together with raw values they have been derived from
      ---------------------------------------------------*/
     function get_useful_average(c in srec /* curr_metric */, p in srec /* all_prev_metrics */) return varchar2
     is
@@ -829,12 +851,29 @@ declare
         case 
           when mt = 'STAT' then
             case 
+              when mn LIKE 'session _ga memory%'                   then ret := lpad( tptformat(gd(c), 'STAT'), 10) || ' actual value in end of snapshot';
+              when mn LIKE '%ed%cursors current'                   then ret := lpad( tptformat(gd(c), 'STAT'), 10) || ' actual value in end of snapshot';
+              when mn = 'file io service time'                     then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'physical read total IO requests')+gd(c, 'STAT', 'physical write total IO requests'),0), 'TIME'), 10) || ' bad guess of IO service time per IO request';
+              when mn = 'file io wait time'                        then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'physical read total IO requests')+gd(c, 'STAT', 'physical write total IO requests'),0), 'TIME'), 10) || ' bad guess of IO wait time per IO request';
+              when mn = 'redo synch time overhead (usec)'          then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'redo synch writes'            ),0), 'TIME'), 10) || ' FG wakeup overhead per log file sync';
+              when mn = 'redo write time'                          then ret := lpad( tptformat(gd(c) * 10000 / nullif(gd(c, 'STAT', 'redo writes'          ),0), 'TIME'), 10) || ' per redo write';
+              when mn = 'recursive calls'                          then ret := lpad( tptformat(gd(c, 'STAT', 'recursive cpu usage') * 10000 / nullif(gd(c),  0), 'TIME'), 10) || ' recursive CPU per recursive call';
+              when mn = 'recursive cpu usage'                      then ret := lpad( tptformat(gd(c) * 10000, 'TIME'), 10) || ' total recursive CPU usage';
+              when mn = 'parse time cpu'                           then ret := lpad( tptformat(gd(c) * 10000, 'TIME'), 10) || ' total parse time CPU';
+              when mn = 'parse time elapsed'                       then ret := lpad( tptformat(gd(c) * 10000, 'TIME'), 10) || ' total parse time elapsed';
+              when mn = 'CPU used when call started'               then ret := lpad( tptformat(gd(c) * 10000, 'TIME'), 10) || ' total CPU used when call started';
+              when mn = 'CPU used by this session'                 then ret := lpad( tptformat(gd(c) * 10000, 'TIME'), 10) || ' total CPU used by this session';
+              when mn = 'DB Time'                                  then ret := lpad( tptformat(gd(c) * 10000, 'TIME'), 10) || ' total DB Time';
               when mn = 'physical write IO requests'               then ret := lpad( tptformat(gd(c, 'STAT', 'physical write bytes')       / nullif(gd(c),0), mt), 10) || ' bytes per request' ;
-              when mn = 'physical total write IO requests'         then ret := lpad( tptformat(gd(c, 'STAT', 'physical total write bytes') / nullif(gd(c),0), mt), 10) || ' bytes per request' ;
+              when mn = 'physical write total IO requests'         then ret := lpad( tptformat(gd(c, 'STAT', 'physical write total bytes') / nullif(gd(c),0), mt), 10) || ' bytes per request' ;
+              when mn = 'physical write total multi block requests' then ret:= lpad( tptformat(gd(c, 'STAT', 'physical write total IO requests') - gd(c), mt), 10) || ' total single block write requests' ;
+              when mn = 'physical read total multi block requests' then ret := lpad( tptformat(gd(c, 'STAT', 'physical read total IO requests') - gd(c), mt), 10) || ' total single block read requests' ;
               when mn = 'physical read IO requests'                then ret := lpad( tptformat(gd(c, 'STAT', 'physical read bytes' )       / nullif(gd(c),0), mt), 10) || ' bytes per request' ;
-              when mn = 'physical total read IO requests'          then ret := lpad( tptformat(gd(c, 'STAT', 'physical total read bytes' ) / nullif(gd(c),0), mt), 10) || ' bytes per request' ;
+              when mn = 'physical read read IO requests'           then ret := lpad( tptformat(gd(c, 'STAT', 'physical read total bytes' ) / nullif(gd(c),0), mt), 10) || ' bytes per request' ;
               when mn = 'bytes sent via SQL*Net to client'         then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'SQL*Net roundtrips to/from client'),0), mt), 10) || ' bytes per roundtrip' ;
-              when mn = 'bytes receive via SQL*Net from client'    then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'SQL*Net roundtrips to/from client'),0), mt), 10) || ' bytes per roundtrip' ;
+              when mn = 'bytes received via SQL*Net from client'   then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'SQL*Net roundtrips to/from client'),0), mt), 10) || ' bytes per roundtrip' ;
+              when mn = 'bytes sent via SQL*Net to dblink'         then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'SQL*Net roundtrips to/from dblink'),0), mt), 10) || ' bytes per roundtrip' ;
+              when mn = 'bytes received via SQL*Net from dblink'   then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'SQL*Net roundtrips to/from dblink'),0), mt), 10) || ' bytes per roundtrip' ;
               when mn = 'redo size'                                then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'user commits'                     ),0), mt), 10) || ' bytes per user commit';
               when mn = 'execute count'                            then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'parse count (total)'              ),0), mt), 10) || ' executions per parse';
               when mn = 'parse count (total)'                      then ret := lpad( tptformat(gd(c) / nullif(gd(c, 'STAT', 'parse count (hard)'               ),0), mt), 10) || ' softparses per hardparse';
@@ -846,104 +885,130 @@ declare
           when mt = 'TIME' then
             -- this is ugly and wrong at the moment - will refactor some day
             case
-              when mn = 'DB time'                                  then ret := lpad(tptformat((get_seconds(d2 - d1)*1000000 - (
+              when mn = 'DB time' or mn= 'background elapsed time' then ret := lpad(tptformat((get_seconds(d2 - d1)*1000000 - (
                                                                                                               gd(c) 
                                                                                                             /*+ gd(c, 'DB CPU', 'TIME') */
-                                                                                                            + gd(c, 'WAIT', 'pmon timer')
-                                                                                                            + gd(c, 'WAIT', 'VKTM Logical Idle Wait')
-                                                                                                            + gd(c, 'WAIT', 'VKTM Init Wait for GSGA')
-                                                                                                            + gd(c, 'WAIT', 'IORM Scheduler Slave Idle Wait')
-                                                                                                            + gd(c, 'WAIT', 'rdbms ipc message')
-                                                                                                            + gd(c, 'WAIT', 'i/o slave wait')
-                                                                                                            + gd(c, 'WAIT', 'VKRM Idle')
-                                                                                                            + gd(c, 'WAIT', 'wait for unread message on broadcast channel')
-                                                                                                            + gd(c, 'WAIT', 'wait for unread message on multiple broadcast channels')
-                                                                                                            + gd(c, 'WAIT', 'class slave wait')
-                                                                                                            + gd(c, 'WAIT', 'KSV master wait')
-                                                                                                            + gd(c, 'WAIT', 'PING')
-                                                                                                            + gd(c, 'WAIT', 'watchdog main loop')
-                                                                                                            + gd(c, 'WAIT', 'DIAG idle wait')
-                                                                                                            + gd(c, 'WAIT', 'ges remote message')
-                                                                                                            + gd(c, 'WAIT', 'gcs remote message')
-                                                                                                            + gd(c, 'WAIT', 'heartbeat monitor sleep')
-                                                                                                            + gd(c, 'WAIT', 'GCR sleep')
-                                                                                                            + gd(c, 'WAIT', 'SGA: MMAN sleep for component shrink')
-                                                                                                            + gd(c, 'WAIT', 'MRP redo arrival')
-                                                                                                            + gd(c, 'WAIT', 'LNS ASYNC archive log')
-                                                                                                            + gd(c, 'WAIT', 'LNS ASYNC dest activation')
-                                                                                                            + gd(c, 'WAIT', 'LNS ASYNC end of log')
-                                                                                                            + gd(c, 'WAIT', 'simulated log write delay')
-                                                                                                            + gd(c, 'WAIT', 'LGWR real time apply sync')
-                                                                                                            + gd(c, 'WAIT', 'parallel recovery slave idle wait')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner builder: idle')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner builder: branch')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner preparer: idle')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner reader: log (idle)')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner reader: redo (idle)')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner client: transaction')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner: other')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner: activate')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner: reset')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner: find session')
-                                                                                                            + gd(c, 'WAIT', 'LogMiner: internal')
-                                                                                                            + gd(c, 'WAIT', 'Logical Standby Apply Delay')
-                                                                                                            + gd(c, 'WAIT', 'parallel recovery coordinator waits for slave cleanup')
-                                                                                                            + gd(c, 'WAIT', 'parallel recovery control message reply')
-                                                                                                            + gd(c, 'WAIT', 'parallel recovery slave next change')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Txn Recovery Start')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Txn Recovery Reply')
-                                                                                                            + gd(c, 'WAIT', 'fbar timer')
-                                                                                                            + gd(c, 'WAIT', 'smon timer')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Metadata Update')
-                                                                                                            + gd(c, 'WAIT', 'Space Manager: slave idle wait')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Index Merge Reply')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Index Merge Execute')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Index Merge Close')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: kdcph_mai')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: kdcphc_ack')
-                                                                                                            + gd(c, 'WAIT', 'shared server idle wait')
-                                                                                                            + gd(c, 'WAIT', 'dispatcher timer')
-                                                                                                            + gd(c, 'WAIT', 'cmon timer')
-                                                                                                            + gd(c, 'WAIT', 'pool server timer')
-                                                                                                            + gd(c, 'WAIT', 'JOX Jit Process Sleep')
-                                                                                                            + gd(c, 'WAIT', 'jobq slave wait')
-                                                                                                            + gd(c, 'WAIT', 'pipe get')
-                                                                                                            + gd(c, 'WAIT', 'PX Deque wait')
-                                                                                                            + gd(c, 'WAIT', 'PX Idle Wait')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Join ACK')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq Credit: need buffer')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq Credit: send blkd')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Msg Fragment')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Parse Reply')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Execute Reply')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Execution Msg')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Table Q Normal')
-                                                                                                            + gd(c, 'WAIT', 'PX Deq: Table Q Sample')
-                                                                                                            + gd(c, 'WAIT', 'Streams fetch slave: waiting for txns')
-                                                                                                            + gd(c, 'WAIT', 'Streams: waiting for messages')
-                                                                                                            + gd(c, 'WAIT', 'Streams capture: waiting for archive log')
-                                                                                                            + gd(c, 'WAIT', 'single-task message')
-                                                                                                            + gd(c, 'WAIT', 'SQL*Net message from client')
-                                                                                                            + gd(c, 'WAIT', 'SQL*Net vector message from client')
-                                                                                                            + gd(c, 'WAIT', 'SQL*Net vector message from dblink')
-                                                                                                            + gd(c, 'WAIT', 'PL/SQL lock timer')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: emn coordinator idle wait')
-                                                                                                            + gd(c, 'WAIT', 'EMON slave idle wait')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: waiting for messages in the queue')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: waiting for time management or cleanup tasks')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: delete acknowledged messages')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: deallocate messages from Streams Pool')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: qmn coordinator idle wait')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: qmn slave idle wait')
-                                                                                                            + gd(c, 'WAIT', 'Streams AQ: RAC qmn coordinator idle wait')
-                                                                                                            + gd(c, 'WAIT', 'HS message to agent')
-                                                                                                            + gd(c, 'WAIT', 'ASM background timer')
-                                                                                                            + gd(c, 'WAIT', 'auto-sqltune: wait graph update')
-                                                                                                            + gd(c, 'WAIT', 'WCR: replay client notify')
-                                                                                                            + gd(c, 'WAIT', 'WCR: replay clock')
-                                                                                                            + gd(c, 'WAIT', 'WCR: replay paused')
-                                                                                                            + gd(c, 'WAIT', 'JS external job')
-                                                                                                            + gd(c, 'WAIT', 'cell worker idle')
+                                                                                                              + gd(c, 'WAIT', 'pmon timer')
+                                                                                                              + gd(c, 'WAIT', 'VKTM Logical Idle Wait')
+                                                                                                              + gd(c, 'WAIT', 'VKTM Init Wait for GSGA')
+                                                                                                              + gd(c, 'WAIT', 'IORM Scheduler Slave Idle Wait')
+                                                                                                              + gd(c, 'WAIT', 'rdbms ipc message')
+                                                                                                              + gd(c, 'WAIT', 'OFS idle')
+                                                                                                              + gd(c, 'WAIT', 'i/o slave wait')
+                                                                                                              + gd(c, 'WAIT', 'VKRM Idle')
+                                                                                                              + gd(c, 'WAIT', 'wait for unread message on broadcast channel')
+                                                                                                              + gd(c, 'WAIT', 'wait for unread message on multiple broadcast channels')
+                                                                                                              + gd(c, 'WAIT', 'class slave wait')
+                                                                                                              + gd(c, 'WAIT', 'PING')
+                                                                                                              + gd(c, 'WAIT', 'watchdog main loop')
+                                                                                                              + gd(c, 'WAIT', 'process in prespawned state')
+                                                                                                              + gd(c, 'WAIT', 'DIAG idle wait')
+                                                                                                              + gd(c, 'WAIT', 'ges remote message')
+                                                                                                              + gd(c, 'WAIT', 'gcs remote message')
+                                                                                                              + gd(c, 'WAIT', 'heartbeat monitor sleep')
+                                                                                                              + gd(c, 'WAIT', 'GCR sleep')
+                                                                                                              + gd(c, 'WAIT', 'SGA: MMAN sleep for component shrink')
+                                                                                                              + gd(c, 'WAIT', 'MRP redo arrival')
+                                                                                                              + gd(c, 'WAIT', 'LNS ASYNC archive log')
+                                                                                                              + gd(c, 'WAIT', 'LNS ASYNC dest activation')
+                                                                                                              + gd(c, 'WAIT', 'LNS ASYNC end of log')
+                                                                                                              + gd(c, 'WAIT', 'simulated log write delay')
+                                                                                                              + gd(c, 'WAIT', 'heartbeat redo informer')
+                                                                                                              + gd(c, 'WAIT', 'LGWR real time apply sync')
+                                                                                                              + gd(c, 'WAIT', 'LGWR worker group idle')
+                                                                                                              + gd(c, 'WAIT', 'parallel recovery slave idle wait')
+                                                                                                              + gd(c, 'WAIT', 'Backup Appliance waiting for work')
+                                                                                                              + gd(c, 'WAIT', 'Backup Appliance waiting restore start')
+                                                                                                              + gd(c, 'WAIT', 'Backup Appliance Surrogate wait')
+                                                                                                              + gd(c, 'WAIT', 'Backup Appliance Servlet wait')
+                                                                                                              + gd(c, 'WAIT', 'Backup Appliance Comm SGA setup wait')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner builder: idle')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner builder: branch')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner preparer: idle')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner reader: log (idle)')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner reader: redo (idle)')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner client: transaction')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner: other')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner: activate')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner: reset')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner: find session')
+                                                                                                              + gd(c, 'WAIT', 'LogMiner: internal')
+                                                                                                              + gd(c, 'WAIT', 'Logical Standby Apply Delay')
+                                                                                                              + gd(c, 'WAIT', 'parallel recovery coordinator waits for slave cleanup')
+                                                                                                              + gd(c, 'WAIT', 'parallel recovery coordinator idle wait')
+                                                                                                              + gd(c, 'WAIT', 'parallel recovery control message reply')
+                                                                                                              + gd(c, 'WAIT', 'parallel recovery slave next change')
+                                                                                                              + gd(c, 'WAIT', 'recovery sender idle wait')
+                                                                                                              + gd(c, 'WAIT', 'recovery receiver idle wait')
+                                                                                                              + gd(c, 'WAIT', 'recovery merger idle wait ')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Txn Recovery Start')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Txn Recovery Reply')
+                                                                                                              + gd(c, 'WAIT', 'fbar timer')
+                                                                                                              + gd(c, 'WAIT', 'smon timer')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Metadata Update')
+                                                                                                              + gd(c, 'WAIT', 'Space Manager: slave idle wait')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Index Merge Reply')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Index Merge Execute')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Index Merge Close')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: kdcph_mai')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: kdcphc_ack')
+                                                                                                              + gd(c, 'WAIT', 'imco timer')
+                                                                                                              + gd(c, 'WAIT', 'virtual circuit next request')
+                                                                                                              + gd(c, 'WAIT', 'shared server idle wait')
+                                                                                                              + gd(c, 'WAIT', 'dispatcher timer')
+                                                                                                              + gd(c, 'WAIT', 'cmon timer')
+                                                                                                              + gd(c, 'WAIT', 'pool server timer')
+                                                                                                              + gd(c, 'WAIT', 'lreg timer')
+                                                                                                              + gd(c, 'WAIT', 'JOX Jit Process Sleep')
+                                                                                                              + gd(c, 'WAIT', 'jobq slave wait')
+                                                                                                              + gd(c, 'WAIT', 'pipe get')
+                                                                                                              + gd(c, 'WAIT', 'PX Deque wait')
+                                                                                                              + gd(c, 'WAIT', 'PX Idle Wait')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Join ACK')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq Credit: need buffer')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq Credit: send blkd')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Msg Fragment')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Parse Reply')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Execute Reply')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Execution Msg')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Table Q Normal')
+                                                                                                              + gd(c, 'WAIT', 'PX Deq: Table Q Sample')
+                                                                                                              + gd(c, 'WAIT', 'REPL Apply: txns')
+                                                                                                              + gd(c, 'WAIT', 'REPL Capture/Apply: messages')
+                                                                                                              + gd(c, 'WAIT', 'REPL Capture: archive log')
+                                                                                                              + gd(c, 'WAIT', 'single-task message')
+                                                                                                              + gd(c, 'WAIT', 'SQL*Net message from client')
+                                                                                                              + gd(c, 'WAIT', 'SQL*Net vector message from client')
+                                                                                                              + gd(c, 'WAIT', 'SQL*Net vector message from dblink')
+                                                                                                              + gd(c, 'WAIT', 'PL/SQL lock timer')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: emn coordinator idle wait')
+                                                                                                              + gd(c, 'WAIT', 'EMON slave idle wait')
+                                                                                                              + gd(c, 'WAIT', 'Emon coordinator main loop')
+                                                                                                              + gd(c, 'WAIT', 'Emon slave main loop')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: waiting for messages in the queue')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: waiting for time management or cleanup tasks')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: delete acknowledged messages')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: deallocate messages from Streams Pool')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: qmn coordinator idle wait')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: qmn slave idle wait')
+                                                                                                              + gd(c, 'WAIT', 'AQ: 12c message cache init wait')
+                                                                                                              + gd(c, 'WAIT', 'AQ Cross Master idle')
+                                                                                                              + gd(c, 'WAIT', 'AQPC idle')
+                                                                                                              + gd(c, 'WAIT', 'Streams AQ: load balancer idle')
+                                                                                                              + gd(c, 'WAIT', 'Sharded  Queues : Part Maintenance idle')
+                                                                                                              + gd(c, 'WAIT', 'REPL Capture/Apply: RAC AQ qmn coordinator')
+                                                                                                              + gd(c, 'WAIT', 'HS message to agent')
+                                                                                                              + gd(c, 'WAIT', 'ASM background timer')
+                                                                                                              + gd(c, 'WAIT', 'iowp msg')
+                                                                                                              + gd(c, 'WAIT', 'iowp file id')
+                                                                                                              + gd(c, 'WAIT', 'netp network')
+                                                                                                              + gd(c, 'WAIT', 'gopp msg')
+                                                                                                              + gd(c, 'WAIT', 'auto-sqltune: wait graph update')
+                                                                                                              + gd(c, 'WAIT', 'WCR: replay client notify')
+                                                                                                              + gd(c, 'WAIT', 'WCR: replay clock')
+                                                                                                              + gd(c, 'WAIT', 'WCR: replay paused')
+                                                                                                              + gd(c, 'WAIT', 'JS external job')
+                                                                                                              + gd(c, 'WAIT', 'cell worker idle')
                                                                                                           )) / (get_seconds(d2 - d1)*1000000) * 100
                                                                                            , 'STAT'), 10) || ' % unaccounted time' ;
               else null;
@@ -1075,7 +1140,6 @@ declare
        and (
            &sid_filter
        ) ;
-           --(inst_id,sid) in (&snapper_sid);
 
        g_sessions := g_empty_sessions;
 
@@ -1103,7 +1167,6 @@ declare
        where
            1=1
        and (&sid_filter) ;
-         --(inst_id,sid) in (&snapper_sid);
 
        for i in 1..tmp_sessions.count loop
            --output('get_sessions i='||i||' sid='||tmp_sessions(i).sid);
@@ -1113,7 +1176,6 @@ declare
        return l_return_sessions;
 
    end; -- get_sessions
-
 
 
     /*---------------------------------------------------
@@ -1214,7 +1276,7 @@ declare
       &_NO_PLSQL_OBJ_ID   ||sitem('N/A')                       -- 23
       &_NO_PLSQL_OBJ_ID   ||sitem('N/A')                       -- 24
       &_NO_PLSQL_OBJ_ID   ||sitem('N/A')                       -- 25
-      &_NO_PLSQL_OBJ_ID   ||sitem('N/A')                       -- 22
+      &_NO_PLSQL_OBJ_ID   ||sitem('N/A')                       -- 26
      &_YES_PLSQL_OBJ_ID   ||sitem(s.plsql_entry_object_id)     -- 23
      &_YES_PLSQL_OBJ_ID   ||sitem(s.plsql_entry_subprogram_id) -- 24
      &_YES_PLSQL_OBJ_ID   ||sitem(s.plsql_object_id)           -- 25
@@ -1223,6 +1285,8 @@ declare
                           ||sitem(s.action)                    -- 28  -- 32 bytes
                           ||sitem(s.client_identifier)         -- 29  -- 64 bytes
                           ||sitem(s.service_name)              -- 30  -- 64 bytes, 10g+
+     &_IF_ORA12_OR_HIGHER ||sitem(s.con_id)                    -- 31  -- 12c+ 
+    &_IF_LOWER_THAN_ORA12 ||sitem('N/A')                       -- 31  
                     , 1, 1000);
              
           end if; -- sample is of an active session
@@ -1455,6 +1519,7 @@ declare
         p_action                      number := 0;
         p_client_identifier           number := 0;
         p_service_name                number := 0;
+        p_con_id                      number := 0;
 
         -- temporary variables for holding session details (for later formatting)
         o_inst_id                     varchar2(100);
@@ -1487,6 +1552,7 @@ declare
         o_action                      varchar2(100);
         o_client_identifier           varchar2(100);
         o_service_name                varchar2(100);
+        o_con_id                      varchar2(100);
 
         -- helper local vars
         l_ash_grouping                number := 0;
@@ -1502,9 +1568,11 @@ declare
       end if;
 
 
-      l_ash_header_line := 'Active%';
+      l_ash_header_line := '';
+      if output_actses     = 1 then l_ash_header_line := l_ash_header_line || '  ActSes'; end if;
+      if output_actses_pct = 1 then l_ash_header_line := l_ash_header_line || '   %Thread'; end if;
 
-      -- ash,ash1,ash2,ash3 parameter column group tokenizer
+      -- ash,ash1,ash2,ash3,ash4,ash5,ash6 parameter column group tokenizer
       for s in (
           SELECT LEVEL
                  , SUBSTR
@@ -1522,10 +1590,11 @@ declare
           ORDER BY 
               LEVEL ASC
       ) loop
-
+          -- supported ASH column names
           case s.token
               -- actual column names in gv$session
               when 'inst_id'                      then l_ash_grouping := l_ash_grouping + c_inst_id                  ; l_ash_header_line := l_ash_header_line || ' | ' || lpad('INST_ID'                   , w_inst_id                  , ' ');
+              when 'con_id'                       then l_ash_grouping := l_ash_grouping + c_con_id                   ; l_ash_header_line := l_ash_header_line || ' | ' || lpad('CON_ID'                     , w_con_id                  , ' ');
               when 'sid'                          then l_ash_grouping := l_ash_grouping + c_sid                      ; l_ash_header_line := l_ash_header_line || ' | ' || lpad('SID'                       , w_sid                      , ' ');
               when 'username'                     then l_ash_grouping := l_ash_grouping + c_username                 ; l_ash_header_line := l_ash_header_line || ' | ' || rpad('USERNAME'                  , w_username                 , ' ');
               when 'machine'                      then l_ash_grouping := l_ash_grouping + c_machine                  ; l_ash_header_line := l_ash_header_line || ' | ' || rpad('MACHINE'                   , w_machine                  , ' ');
@@ -1579,7 +1648,7 @@ declare
               when 'wait_state'                   then l_ash_grouping := l_ash_grouping + c_state                    ; l_ash_header_line := l_ash_header_line || ' | ' || rpad('STATE'                     , w_state                    , ' ');
           else
               null;
-              -- raise_application_error(-20000, 'Invalid ASH column name');
+              raise_application_error(-20001, 'Snapper: Invalid ASH column name, search for "ASH column name"'||chr(10)||'in snapper.sql script to see supported column names.'||chr(10)||sqlerrm);
           end case; -- case s.token
 
       end loop; -- tokenizer
@@ -1626,75 +1695,78 @@ declare
                , substr(r.rec, instr(r.rec, '<', 1, 28)+1, instr (substr(r.rec, instr(r.rec, '<', 1, 28)+1), '>')-1) action
                , substr(r.rec, instr(r.rec, '<', 1, 29)+1, instr (substr(r.rec, instr(r.rec, '<', 1, 29)+1), '>')-1) client_identifier
                , substr(r.rec, instr(r.rec, '<', 1, 30)+1, instr (substr(r.rec, instr(r.rec, '<', 1, 30)+1), '>')-1) service_name              
+               , substr(r.rec, instr(r.rec, '<', 1, 31)+1, instr (substr(r.rec, instr(r.rec, '<', 1, 31)+1), '>')-1) con_id              
              from 
                 raw_records r
           )
           select * from (
             select
-               decode(bitand(l_ash_grouping, power(2, s_inst_id                       )), 0, chr(0), inst_id                       ) as inst_id
-             , decode(bitand(l_ash_grouping, power(2, s_sid                           )), 0, chr(0), sid                           ) as sid                           
-             , decode(bitand(l_ash_grouping, power(2, s_username                      )), 0, chr(0), username                      ) as username                      
-             , decode(bitand(l_ash_grouping, power(2, s_machine                       )), 0, chr(0), machine                       ) as machine                       
-             , decode(bitand(l_ash_grouping, power(2, s_terminal                      )), 0, chr(0), terminal                      ) as terminal                      
-             , decode(bitand(l_ash_grouping, power(2, s_program                       )), 0, chr(0), program                       ) as program                       
-             , decode(bitand(l_ash_grouping, power(2, s_event                         )), 0, chr(0), event                         ) as event                         
-             , decode(bitand(l_ash_grouping, power(2, s_wait_class                    )), 0, chr(0), wait_class                    ) as wait_class                    
-             , decode(bitand(l_ash_grouping, power(2, s_state                         )), 0, chr(0), state                         ) as state                         
-             , decode(bitand(l_ash_grouping, power(2, s_p1                            )), 0, chr(0), p1                            ) as p1                            
-             , decode(bitand(l_ash_grouping, power(2, s_p2                            )), 0, chr(0), p2                            ) as p2                            
-             , decode(bitand(l_ash_grouping, power(2, s_p3                            )), 0, chr(0), p3                            ) as p3                            
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_obj#                 )), 0, chr(0), row_wait_obj#                 ) as row_wait_obj#                 
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_file#                )), 0, chr(0), row_wait_file#                ) as row_wait_file#                
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_block#               )), 0, chr(0), row_wait_block#               ) as row_wait_block#               
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_row#                 )), 0, chr(0), row_wait_row#                 ) as row_wait_row#                 
-             , decode(bitand(l_ash_grouping, power(2, s_blocking_session_status       )), 0, chr(0), blocking_session_status       ) as blocking_session_status       
-             , decode(bitand(l_ash_grouping, power(2, s_blocking_instance             )), 0, chr(0), blocking_instance             ) as blocking_instance             
-             , decode(bitand(l_ash_grouping, power(2, s_blocking_session              )), 0, chr(0), blocking_session              ) as blocking_session              
-             , decode(bitand(l_ash_grouping, power(2, s_sql_hash_value                )), 0, chr(0), sql_hash_value                ) as sql_hash_value                
-             , decode(bitand(l_ash_grouping, power(2, s_sql_id                        )), 0, chr(0), sql_id                        ) as sql_id                        
-             , decode(bitand(l_ash_grouping, power(2, s_sql_child_number              )), 0, chr(0), sql_child_number              ) as sql_child_number              
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_object_id         )), 0, chr(0), plsql_entry_object_id         ) as plsql_entry_object_id         
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_subprogram_id     )), 0, chr(0), plsql_entry_subprogram_id     ) as plsql_entry_subprogram_id     
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_object_id               )), 0, chr(0), plsql_object_id               ) as plsql_object_id               
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_subprogram_id           )), 0, chr(0), plsql_subprogram_id           ) as plsql_subprogram_id           
-             , decode(bitand(l_ash_grouping, power(2, s_module                        )), 0, chr(0), module                        ) as module                        
-             , decode(bitand(l_ash_grouping, power(2, s_action                        )), 0, chr(0), action                        ) as action                        
-             , decode(bitand(l_ash_grouping, power(2, s_client_identifier             )), 0, chr(0), client_identifier             ) as client_identifier             
-             , decode(bitand(l_ash_grouping, power(2, s_service_name                  )), 0, chr(0), service_name                  ) as service_name                  
-             , count(*)/g_ash_samples_taken average_active_samples
+                 decode(bitand(l_ash_grouping, power(2, s_inst_id                       )), 0, chr(0), inst_id                       ) as inst_id
+               , decode(bitand(l_ash_grouping, power(2, s_sid                           )), 0, chr(0), sid                           ) as sid                           
+               , decode(bitand(l_ash_grouping, power(2, s_username                      )), 0, chr(0), username                      ) as username                      
+               , decode(bitand(l_ash_grouping, power(2, s_machine                       )), 0, chr(0), machine                       ) as machine                       
+               , decode(bitand(l_ash_grouping, power(2, s_terminal                      )), 0, chr(0), terminal                      ) as terminal                      
+               , decode(bitand(l_ash_grouping, power(2, s_program                       )), 0, chr(0), program                       ) as program                       
+               , decode(bitand(l_ash_grouping, power(2, s_event                         )), 0, chr(0), event                         ) as event                         
+               , decode(bitand(l_ash_grouping, power(2, s_wait_class                    )), 0, chr(0), wait_class                    ) as wait_class                    
+               , decode(bitand(l_ash_grouping, power(2, s_state                         )), 0, chr(0), state                         ) as state                         
+               , decode(bitand(l_ash_grouping, power(2, s_p1                            )), 0, chr(0), p1                            ) as p1                            
+               , decode(bitand(l_ash_grouping, power(2, s_p2                            )), 0, chr(0), p2                            ) as p2                            
+               , decode(bitand(l_ash_grouping, power(2, s_p3                            )), 0, chr(0), p3                            ) as p3                            
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_obj#                 )), 0, chr(0), row_wait_obj#                 ) as row_wait_obj#                 
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_file#                )), 0, chr(0), row_wait_file#                ) as row_wait_file#                
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_block#               )), 0, chr(0), row_wait_block#               ) as row_wait_block#               
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_row#                 )), 0, chr(0), row_wait_row#                 ) as row_wait_row#                 
+               , decode(bitand(l_ash_grouping, power(2, s_blocking_session_status       )), 0, chr(0), blocking_session_status       ) as blocking_session_status       
+               , decode(bitand(l_ash_grouping, power(2, s_blocking_instance             )), 0, chr(0), blocking_instance             ) as blocking_instance             
+               , decode(bitand(l_ash_grouping, power(2, s_blocking_session              )), 0, chr(0), blocking_session              ) as blocking_session              
+               , decode(bitand(l_ash_grouping, power(2, s_sql_hash_value                )), 0, chr(0), sql_hash_value                ) as sql_hash_value                
+               , decode(bitand(l_ash_grouping, power(2, s_sql_id                        )), 0, chr(0), sql_id                        ) as sql_id                        
+               , decode(bitand(l_ash_grouping, power(2, s_sql_child_number              )), 0, chr(0), sql_child_number              ) as sql_child_number              
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_object_id         )), 0, chr(0), plsql_entry_object_id         ) as plsql_entry_object_id         
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_subprogram_id     )), 0, chr(0), plsql_entry_subprogram_id     ) as plsql_entry_subprogram_id     
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_object_id               )), 0, chr(0), plsql_object_id               ) as plsql_object_id               
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_subprogram_id           )), 0, chr(0), plsql_subprogram_id           ) as plsql_subprogram_id           
+               , decode(bitand(l_ash_grouping, power(2, s_module                        )), 0, chr(0), module                        ) as module                        
+               , decode(bitand(l_ash_grouping, power(2, s_action                        )), 0, chr(0), action                        ) as action                        
+               , decode(bitand(l_ash_grouping, power(2, s_client_identifier             )), 0, chr(0), client_identifier             ) as client_identifier             
+               , decode(bitand(l_ash_grouping, power(2, s_service_name                  )), 0, chr(0), service_name                  ) as service_name                  
+               , decode(bitand(l_ash_grouping, power(2, s_con_id                        )), 0, chr(0), con_id                        ) as con_id                  
+               , count(*)/g_ash_samples_taken average_active_samples
             from
                ash_records a
             group by
-               decode(bitand(l_ash_grouping, power(2, s_inst_id                       )), 0, chr(0), inst_id                       ) -- inst_id                       
-             , decode(bitand(l_ash_grouping, power(2, s_sid                           )), 0, chr(0), sid                           ) -- sid                           
-             , decode(bitand(l_ash_grouping, power(2, s_username                      )), 0, chr(0), username                      ) -- username                      
-             , decode(bitand(l_ash_grouping, power(2, s_machine                       )), 0, chr(0), machine                       ) -- machine                       
-             , decode(bitand(l_ash_grouping, power(2, s_terminal                      )), 0, chr(0), terminal                      ) -- terminal                      
-             , decode(bitand(l_ash_grouping, power(2, s_program                       )), 0, chr(0), program                       ) -- program                       
-             , decode(bitand(l_ash_grouping, power(2, s_event                         )), 0, chr(0), event                         ) -- event                         
-             , decode(bitand(l_ash_grouping, power(2, s_wait_class                    )), 0, chr(0), wait_class                    ) -- wait_class                    
-             , decode(bitand(l_ash_grouping, power(2, s_state                         )), 0, chr(0), state                         ) -- state                         
-             , decode(bitand(l_ash_grouping, power(2, s_p1                            )), 0, chr(0), p1                            ) -- p1                            
-             , decode(bitand(l_ash_grouping, power(2, s_p2                            )), 0, chr(0), p2                            ) -- p2                            
-             , decode(bitand(l_ash_grouping, power(2, s_p3                            )), 0, chr(0), p3                            ) -- p3                            
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_obj#                 )), 0, chr(0), row_wait_obj#                 ) -- row_wait_obj#                 
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_file#                )), 0, chr(0), row_wait_file#                ) -- row_wait_file#                
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_block#               )), 0, chr(0), row_wait_block#               ) -- row_wait_block#               
-             , decode(bitand(l_ash_grouping, power(2, s_row_wait_row#                 )), 0, chr(0), row_wait_row#                 ) -- row_wait_row#                 
-             , decode(bitand(l_ash_grouping, power(2, s_blocking_session_status       )), 0, chr(0), blocking_session_status       ) -- blocking_session_status       
-             , decode(bitand(l_ash_grouping, power(2, s_blocking_instance             )), 0, chr(0), blocking_instance             ) -- blocking_instance             
-             , decode(bitand(l_ash_grouping, power(2, s_blocking_session              )), 0, chr(0), blocking_session              ) -- blocking_session              
-             , decode(bitand(l_ash_grouping, power(2, s_sql_hash_value                )), 0, chr(0), sql_hash_value                ) -- sql_hash_value                
-             , decode(bitand(l_ash_grouping, power(2, s_sql_id                        )), 0, chr(0), sql_id                        ) -- sql_id                        
-             , decode(bitand(l_ash_grouping, power(2, s_sql_child_number              )), 0, chr(0), sql_child_number              ) -- sql_child_number              
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_object_id         )), 0, chr(0), plsql_entry_object_id         ) -- plsql_entry_object_id         
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_subprogram_id     )), 0, chr(0), plsql_entry_subprogram_id     ) -- plsql_entry_subprogram_id     
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_object_id               )), 0, chr(0), plsql_object_id               ) -- plsql_object_id               
-             , decode(bitand(l_ash_grouping, power(2, s_plsql_subprogram_id           )), 0, chr(0), plsql_subprogram_id           ) -- plsql_subprogram_id           
-             , decode(bitand(l_ash_grouping, power(2, s_module                        )), 0, chr(0), module                        ) -- module                        
-             , decode(bitand(l_ash_grouping, power(2, s_action                        )), 0, chr(0), action                        ) -- action                        
-             , decode(bitand(l_ash_grouping, power(2, s_client_identifier             )), 0, chr(0), client_identifier             ) -- client_identifier             
-             , decode(bitand(l_ash_grouping, power(2, s_service_name                  )), 0, chr(0), service_name                  ) -- service_name                  
+                 decode(bitand(l_ash_grouping, power(2, s_inst_id                       )), 0, chr(0), inst_id                       ) -- inst_id                       
+               , decode(bitand(l_ash_grouping, power(2, s_sid                           )), 0, chr(0), sid                           ) -- sid                           
+               , decode(bitand(l_ash_grouping, power(2, s_username                      )), 0, chr(0), username                      ) -- username                      
+               , decode(bitand(l_ash_grouping, power(2, s_machine                       )), 0, chr(0), machine                       ) -- machine                       
+               , decode(bitand(l_ash_grouping, power(2, s_terminal                      )), 0, chr(0), terminal                      ) -- terminal                      
+               , decode(bitand(l_ash_grouping, power(2, s_program                       )), 0, chr(0), program                       ) -- program                       
+               , decode(bitand(l_ash_grouping, power(2, s_event                         )), 0, chr(0), event                         ) -- event                         
+               , decode(bitand(l_ash_grouping, power(2, s_wait_class                    )), 0, chr(0), wait_class                    ) -- wait_class                    
+               , decode(bitand(l_ash_grouping, power(2, s_state                         )), 0, chr(0), state                         ) -- state                         
+               , decode(bitand(l_ash_grouping, power(2, s_p1                            )), 0, chr(0), p1                            ) -- p1                            
+               , decode(bitand(l_ash_grouping, power(2, s_p2                            )), 0, chr(0), p2                            ) -- p2                            
+               , decode(bitand(l_ash_grouping, power(2, s_p3                            )), 0, chr(0), p3                            ) -- p3                            
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_obj#                 )), 0, chr(0), row_wait_obj#                 ) -- row_wait_obj#                 
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_file#                )), 0, chr(0), row_wait_file#                ) -- row_wait_file#                
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_block#               )), 0, chr(0), row_wait_block#               ) -- row_wait_block#               
+               , decode(bitand(l_ash_grouping, power(2, s_row_wait_row#                 )), 0, chr(0), row_wait_row#                 ) -- row_wait_row#                 
+               , decode(bitand(l_ash_grouping, power(2, s_blocking_session_status       )), 0, chr(0), blocking_session_status       ) -- blocking_session_status       
+               , decode(bitand(l_ash_grouping, power(2, s_blocking_instance             )), 0, chr(0), blocking_instance             ) -- blocking_instance             
+               , decode(bitand(l_ash_grouping, power(2, s_blocking_session              )), 0, chr(0), blocking_session              ) -- blocking_session              
+               , decode(bitand(l_ash_grouping, power(2, s_sql_hash_value                )), 0, chr(0), sql_hash_value                ) -- sql_hash_value                
+               , decode(bitand(l_ash_grouping, power(2, s_sql_id                        )), 0, chr(0), sql_id                        ) -- sql_id                        
+               , decode(bitand(l_ash_grouping, power(2, s_sql_child_number              )), 0, chr(0), sql_child_number              ) -- sql_child_number              
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_object_id         )), 0, chr(0), plsql_entry_object_id         ) -- plsql_entry_object_id         
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_entry_subprogram_id     )), 0, chr(0), plsql_entry_subprogram_id     ) -- plsql_entry_subprogram_id     
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_object_id               )), 0, chr(0), plsql_object_id               ) -- plsql_object_id               
+               , decode(bitand(l_ash_grouping, power(2, s_plsql_subprogram_id           )), 0, chr(0), plsql_subprogram_id           ) -- plsql_subprogram_id           
+               , decode(bitand(l_ash_grouping, power(2, s_module                        )), 0, chr(0), module                        ) -- module                        
+               , decode(bitand(l_ash_grouping, power(2, s_action                        )), 0, chr(0), action                        ) -- action                        
+               , decode(bitand(l_ash_grouping, power(2, s_client_identifier             )), 0, chr(0), client_identifier             ) -- client_identifier             
+               , decode(bitand(l_ash_grouping, power(2, s_service_name                  )), 0, chr(0), service_name                  ) -- service_name                  
+               , decode(bitand(l_ash_grouping, power(2, s_con_id                        )), 0, chr(0), con_id                        ) -- con_id                  
            order by
               count(*)/g_ash_samples_taken desc
           )
@@ -1733,10 +1805,12 @@ declare
           o_action                      := CASE WHEN i.action                         = chr(0) THEN null ELSE nvl(i.action                        , ' ') END;
           o_client_identifier           := CASE WHEN i.client_identifier              = chr(0) THEN null ELSE nvl(i.client_identifier             , ' ') END;
           o_service_name                := CASE WHEN i.service_name                   = chr(0) THEN null ELSE nvl(i.service_name                  , ' ') END;
+          o_con_id                      := CASE WHEN i.con_id                         = chr(0) THEN null ELSE nvl(i.con_id                        , ' ') END;
 
-
-          -- print the activity % as the first column
-          l_output_line := lpad(to_char(round(i.average_active_samples*100))||'%', w_activity_pct, ' ');
+          -- print the AAS and activity % as the first columns
+          l_output_line := '';
+          if output_actses     = 1 then l_output_line := l_output_line || lpad(to_char(round(i.average_active_samples,2),'9999.99'), w_actses, ' '); end if;
+          if output_actses_pct = 1 then l_output_line := l_output_line || lpad('('||to_char(round(i.average_active_samples*100))||'%)', w_actses_pct, ' '); end if;
 
           -- loop through ash columns to find what to print and in which order
           for s in (
@@ -1760,6 +1834,7 @@ declare
                   case s.token
                       -- actual column names in gv$session
                       when 'inst_id'                      then lpad(o_inst_id                   , w_inst_id                  , ' ')
+                      when 'con_id'                       then lpad(o_con_id                    , w_con_id                   , ' ')
                       when 'sid'                          then lpad(o_sid                       , w_sid                      , ' ')
                       when 'username'                     then rpad(o_username                  , w_username                 , ' ')
                       when 'machine'                      then rpad(o_machine                   , w_machine                  , ' ')
@@ -1868,7 +1943,7 @@ begin
  
     if pagesize > 0 then
         output(' ');
-        output('-- Session Snapper v4.10 BETA - by Tanel Poder ( http://blog.tanelpoder.com ) - Enjoy the Most Advanced Oracle Troubleshooting Script on the Planet! :)');
+        output('-- Session Snapper v4.24 - by Tanel Poder ( http://blog.tanelpoder.com/snapper ) - Enjoy the Most Advanced Oracle Troubleshooting Script on the Planet! :)');
         output(' ');
     end if;
 
@@ -2147,7 +2222,6 @@ begin
 
             if pagesize > 0 and changed_values > 0 then 
                 output(' ');
-                --output('--  End of Stats snap '||to_char(c)||', end='||to_char(d2, 'YYYY-MM-DD HH24:MI:SS')||', seconds='||to_char(case get_seconds(d2-d1) when 0 then (&snapper_sleep) else round(get_seconds(d2-d1), 1) end)); 
                 output('--  End of Stats snap '||to_char(c)||', end='||to_char(d2, 'YYYY-MM-DD HH24:MI:SS')||', seconds='||round(get_seconds(d2-d1), 1)); 
             end if;
 
@@ -2164,6 +2238,9 @@ begin
             g_ash_columns1 := case when getopt('&snapper_options', 'ash1' ) is null then null when getopt('&snapper_options', 'ash1' ) = chr(0) then g_ash_columns1 else getopt('&snapper_options', 'ash1=' ) end;
             g_ash_columns2 := case when getopt('&snapper_options', 'ash2' ) is null then null when getopt('&snapper_options', 'ash2' ) = chr(0) then g_ash_columns2 else getopt('&snapper_options', 'ash2=' ) end;
             g_ash_columns3 := case when getopt('&snapper_options', 'ash3' ) is null then null when getopt('&snapper_options', 'ash3' ) = chr(0) then g_ash_columns3 else getopt('&snapper_options', 'ash3=' ) end;
+            g_ash_columns4 := case when getopt('&snapper_options', 'ash4' ) is null then null when getopt('&snapper_options', 'ash4' ) = chr(0) then g_ash_columns4 else getopt('&snapper_options', 'ash4=' ) end;
+            g_ash_columns5 := case when getopt('&snapper_options', 'ash5' ) is null then null when getopt('&snapper_options', 'ash5' ) = chr(0) then g_ash_columns5 else getopt('&snapper_options', 'ash5=' ) end;
+            g_ash_columns6 := case when getopt('&snapper_options', 'ash6' ) is null then null when getopt('&snapper_options', 'ash6' ) = chr(0) then g_ash_columns6 else getopt('&snapper_options', 'ash6=' ) end;
 
             -- group ASH records and print report
             out_ash( g_ash_columns, 10 );
@@ -2171,12 +2248,16 @@ begin
             if g_ash_columns1 is not null then out_ash( g_ash_columns1, 10 ); end if;
             if g_ash_columns2 is not null then out_ash( g_ash_columns2, 10 ); end if;
             if g_ash_columns3 is not null then out_ash( g_ash_columns3, 10 ); end if;
+            if g_ash_columns4 is not null then out_ash( g_ash_columns4, 10 ); end if;
+            if g_ash_columns5 is not null then out_ash( g_ash_columns5, 10 ); end if;
+            if g_ash_columns6 is not null then out_ash( g_ash_columns6, 10 ); end if;
 
 
             if pagesize > 0 then 
                 output(' '); 
-                --output('--  End of ASH snap '||to_char(c)||', end='||to_char(ash_date2, 'YYYY-MM-DD HH24:MI:SS')||', seconds='||to_char(case (ash_date2-ash_date1) when 0 then (&snapper_sleep) else round((ash_date2-ash_date1) * 86400, 1) end)||', samples_taken='||g_ash_samples_taken); 
-                output('--  End of ASH snap '||to_char(c)||', end='||to_char(ash_date2, 'YYYY-MM-DD HH24:MI:SS')||', seconds='||to_char(round((ash_date2-ash_date1) * 86400, 1))||', samples_taken='||g_ash_samples_taken); 
+                output('--  End of ASH snap '||to_char(c)||', end='||to_char(ash_date2, 'YYYY-MM-DD HH24:MI:SS')||', seconds='||to_char(round((ash_date2-ash_date1) * 86400, 1))||', samples_taken='||g_ash_samples_taken||', AAS='||CASE WHEN g_ash_samples_taken = 0 THEN '(No ASH sampling in begin/end snapshot mode)' ELSE TO_CHAR(ROUND(g_ash.COUNT/NULLIF(g_ash_samples_taken,0),1)) END ); 
+                --output('--  End of ASH snap '||to_char(c)||', end='||to_char(ash_date2, 'YYYY-MM-DD HH24:MI:SS')||', seconds='||to_char(round((ash_date2-ash_date1) * 86400, 1))||', samples_taken='||g_ash_samples_taken||', AAS='||TO_CHAR(ROUND(g_ash.COUNT/g_ash_samples_taken,1))||', Active%='||TO_CHAR(ROUND(g_ash.COUNT/g_ash_samples_taken*100,1))||'%' ); 
+
                 output(' '); 
             end if;
 
@@ -2186,16 +2267,20 @@ begin
 
     end loop; -- for c in 1..snapper_count
 
+    exception when others then
+        raise_application_error(-20000, 'Snapper: Probably bad syntax or no execute rights on SYS.DBMS_LOCK'||chr(10)||'Check http://blog.tanelpoder.com/snapper for instructions'||chr(10)||sqlerrm);
+
 end;
 /
 
-undefine snapper_oraversion
 undefine snapper_sleep
 undefine snapper_count
 undefine snapper_sid
 undefine ssid_begin
+undefine _IF_ORA12_OR_HIGHER
 undefine _IF_ORA11_OR_HIGHER
 undefine _IF_LOWER_THAN_ORA11
+undefine _IF_LOWER_THAN_ORA12
 undefine _NO_BLK_INST
 undefine _YES_BLK_INST
 undefine _NO_PLSQL_OBJ_ID
@@ -2204,6 +2289,8 @@ undefine _IF_DBMS_SYSTEM_ACCESSIBLE
 undefine _IF_X_ACCESSIBLE
 undefine _MANUAL_SNAPSHOT
 undefine _USE_DBMS_LOCK
+col snapper_ora12higher    clear
+col snapper_ora12lower     clear
 col snapper_ora11higher    clear
 col snapper_ora11lower     clear
 col dbms_system_accessible clear
@@ -2219,3 +2306,4 @@ col sid_filter             clear
 col inst_filter            clear 
 
 set serveroutput off
+
