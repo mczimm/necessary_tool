@@ -1874,12 +1874,18 @@ end loop;
 end;
     """
 
-    SQL=SQL_BIND% (sql_id,hint,desc)
+    print "\n"+hint+"\n"
+    choice = "n"
+    choice = raw_input("If entered hint is correct press <<y>>, if not press <<n>> ")
 
-    cur = conn.cursor()
-    cur.execute(SQL)
+    if choice == 'y':
+        SQL=SQL_BIND% (sql_id,hint,desc)
+        cur = conn.cursor()
+        cur.execute(SQL)
 
-    curr_time()
+        curr_time()
+    else:
+        sys.exit(1)
 
   except cx_Oracle.DatabaseError,info:
     print "Error: ",info
@@ -2083,8 +2089,8 @@ def tune_task_create(conn,sql_id):
 DECLARE
  ret_val VARCHAR2(4000);
 BEGIN
- ret_val := dbms_sqltune.create_tuning_task(task_name=>'task_%s', sql_id=>'%s', time_limit=>1000);
- dbms_sqltune.execute_tuning_task('task_%s');
+ ret_val := dbms_sqltune.create_tuning_task(task_name=>'task3_%s', sql_id=>'%s', time_limit=>1000);
+ dbms_sqltune.execute_tuning_task('task3_%s');
 END;
     """
     sql1 = sql_id
@@ -2098,7 +2104,7 @@ END;
     cur.execute(SQL)
     curr_time()
 
-    sql4 = """SELECT DBMS_SQLTUNE.report_tuning_task('task_%s') AS recommendations FROM dual""" % sql1
+    sql4 = """SELECT DBMS_SQLTUNE.report_tuning_task('task3_%s') AS recommendations FROM dual""" % sql1
     cur.execute(sql4)
 
     res = cur.fetchall()
