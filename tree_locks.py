@@ -1016,7 +1016,7 @@ def ash_wait_tree_hist_sum(conn,sql_or_event,sql_or_event_value,snap_b,snap_e):
         count(distinct session_id) as SESS_COUNT,
         round(avg(time_waited) / 1000) as AVG_WAIT_TIME_MS
                          from ash
-                         start with %s = '%s'
+                         start with %s like '%s'
                          connect by nocycle prior ash.SAMPLE_ID = ash.SAMPLE_ID
        and ash.SESSION_ID = prior ash.BLOCKING_SESSION
        and ash.instance_number = prior ash.BLOCKING_inst_id
